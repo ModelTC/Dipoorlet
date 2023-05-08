@@ -11,7 +11,7 @@ Dipoorlet is an offline quantization tool that can perform offline quantization 
 # Installation
 
 ```
-git clone ...
+git clone git@github.com:ModelTC/Dipoorlet.git
 cd dipoorlet
 python setup.py install
 ```
@@ -27,7 +27,7 @@ Please visit [ONNXRuntime](https://onnxruntime.ai/docs/execution-providers/CUDA-
 
 ### Docker
 ONNXRuntime has bug when running in docker when `cpu-sets` is set.
-Please checke [issue](https://github.com/microsoft/onnxruntime/issues/8313)
+Please check [issue](https://github.com/microsoft/onnxruntime/issues/8313)
 
 
 # Usage
