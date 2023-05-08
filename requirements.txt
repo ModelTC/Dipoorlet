@@ -1,0 +1,5 @@
+torch
+onnx>=1.10.0
+onnxruntime-gpu
+numpy
+tqdm
