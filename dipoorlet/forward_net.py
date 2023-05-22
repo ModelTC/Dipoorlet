@@ -184,6 +184,8 @@ def forward_get_minmax(onnx_graph, args):
                 graph.output.insert(0, onnx.ValueInfoProto(name=output_name))
     providers = [("CUDAExecutionProvider", {'device_id': args.local_rank})]
     ort_session = ort.InferenceSession(net.SerializeToString(), providers=providers)
+    if 'CUDAExecutionProvider' not in ort_session.get_provider_options():
+        logger.warning("CUDA may not used. Please check your ort/cuda/cudnn version.")
     input_name_list = []
     input_name_shape_map = {}
     for input in ort_session.get_inputs():
@@ -226,8 +228,6 @@ def forward_get_minmax(onnx_graph, args):
 
 
 def forward_get_hist(onnx_graph, stats_min_max, args):
-    # if not args.keep_bs:
-    #     set_graph_batch_size(graph_for_net, [1] * len(graph.input))
     net = copy.deepcopy(onnx_graph.model)
     graph = net.graph
     for node in reversed(graph.node):
@@ -236,6 +236,8 @@ def forward_get_hist(onnx_graph, stats_min_max, args):
                 graph.output.insert(0, onnx.ValueInfoProto(name=output_name))
     providers = [("CUDAExecutionProvider", {'device_id': args.local_rank})]
     ort_session = ort.InferenceSession(net.SerializeToString(), providers=providers)
+    if 'CUDAExecutionProvider' not in ort_session.get_provider_options():
+        logger.warning("CUDA may not used. Please check your ort/cuda/cudnn version.")
     input_name_list = []
     input_name_shape_map = {}
     for input in ort_session.get_inputs():
@@ -284,6 +286,8 @@ def forward_net_octav(onnx_graph, args):
                 graph.output.insert(0, onnx.ValueInfoProto(name=output_name))
     providers = [("CUDAExecutionProvider", {'device_id': args.local_rank})]
     ort_session = ort.InferenceSession(net.SerializeToString(), providers=providers)
+    if 'CUDAExecutionProvider' not in ort_session.get_provider_options():
+        logger.warning("CUDA may not used. Please check your ort/cuda/cudnn version.")
     input_name_list = []
     input_name_shape_map = {}
     for input in ort_session.get_inputs():

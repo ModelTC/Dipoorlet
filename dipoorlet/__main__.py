@@ -51,7 +51,8 @@ elif args.mpirun:
     init_from_mpi()
 else:
     dist.init_process_group(backend='nccl')
-    torch.cuda.set_device(dist.get_rank())
+    device = dist.get_rank() % torch.cuda.device_count()
+    torch.cuda.set_device(device)
 
 if args.output_dir is None:
     model_path = ('/').join(args.model.split('/')[:-1])
