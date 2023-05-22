@@ -1,15 +1,22 @@
 import os
+import re
+
 import torch
 import torch.distributed as dist
 
 
 def init_from_mpi():
-    os.environ['MASTER_ADDR'] = os.environ.get('MASTER_ADDR')
-    os.environ['MASTER_PORT'] = os.environ.get('MASTER_PORT')
+    if 'MASTER_ADDR' not in os.environ:
+        omp_uri = os.environ["OMPI_MCA_orte_hnp_uri"]
+        target_ip = re.search(r'.*tcp://((\d{1,3}\.){3}\d{1,3})[:,].*', omp_uri)
+        auto_addr = target_ip.group(1)
+        os.environ['MASTER_ADDR'] = auto_addr
+    if 'MASTER_PORT' not in os.environ:
+        os.environ['MASTER_PORT'] = '29500'
     local_id = os.environ.get('OMPI_COMM_WORLD_RANK')
     ntasks = os.environ.get('OMPI_COMM_WORLD_SIZE')
-    os.environ['WORLD_SIZE'] = int(ntasks)
-    os.environ['RANK'] = int(local_id)
+    os.environ['WORLD_SIZE'] = ntasks
+    os.environ['RANK'] = local_id
     dist.init_process_group(backend='nccl')
     rank = dist.get_rank()
     device = rank % torch.cuda.device_count()

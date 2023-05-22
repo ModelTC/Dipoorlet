@@ -70,7 +70,7 @@ def quantize_profiling_multipass(graph_after_wt, graph_ori, act_clip_val, weight
                 q_tensor_name = tensor_name + DQTENSORSUFFIX
             if single[tensor_name]:
                 if tensor_name not in model_cosine_dict:
-                    model_cosine_dict[tensor_name] = {'res_tol': q_tensors[q_tensor_name], 'fp_tol': fp_tensors[tensor_name]}
+                    model_cosine_dict[tensor_name] = {'res_tol': [q_tensors[q_tensor_name]], 'fp_tol': [fp_tensors[tensor_name]]}
                 else:
                     model_cosine_dict[tensor_name]['res_tol'].append(q_tensors[q_tensor_name])
                     model_cosine_dict[tensor_name]['fp_tol'].append(fp_tensors[tensor_name])
@@ -91,7 +91,12 @@ def quantize_profiling_multipass(graph_after_wt, graph_ori, act_clip_val, weight
         layer_cosine_dict[k] = v / rank_data_size
 
     for k, v in model_cosine_dict.items():
-        model_cosine_dict[k] = [v[0] / rank_data_size, v[1]]
+        if single[k]:
+            _cos = cos_similarity(np.stack(model_cosine_dict[k]['res_tol']),
+                                  np.stack(model_cosine_dict[k]['fp_tol']))
+            model_cosine_dict[k] = [_cos, _cos]
+        else:
+            model_cosine_dict[k] = [v[0] / rank_data_size, v[1]]
 
     return layer_cosine_dict, model_cosine_dict, quant_node_list
 
@@ -143,7 +148,7 @@ def get_output_single_map(graph):
     single = {}
     for out_tensor in graph.network_outputs:
         shape = graph.get_tensor_shape(out_tensor)
-        single[out_tensor] = np.prod(shape[1:]) <= 5
+        single[out_tensor] = np.prod(shape[1:]) <= 10
     return single
 
 
@@ -201,6 +206,4 @@ def show_model_profiling_res(graph_after_wt, layer_cosine_dict, model_cosine_dic
             logger.info("{:40} avgcos : {:<.5f}    mincos : {:<.5f}".format(name, model_cosine_dict[name][0],
                                                                             model_cosine_dict[name][1]))
         else:
-            _cos = cos_similarity(np.array(model_cosine_dict[name]['res_tol']),
-                                  np.array(model_cosine_dict[name]['fp_tol']))
-            logger.info("{:40} tolcos : {:<.5f}".format(name, _cos))
+            logger.info("{:40} tolcos : {:<.5f}".format(name, model_cosine_dict[name][0]))
