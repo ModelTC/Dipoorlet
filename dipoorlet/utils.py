@@ -6,8 +6,6 @@ import time
 
 import numpy as np
 import onnx
-import onnxruntime as ort
-import torch
 import torch.distributed as dist
 from onnx import TensorProto, numpy_helper
 from onnx.shape_inference import infer_shapes
@@ -23,9 +21,6 @@ class ONNXGraph(object):
         if self.model:
             self.graph = self.model.graph
         self.output_dir = output_dir
-        rank = dist.get_rank()
-        device = rank % torch.cuda.device_count()
-        self.providers = [("CUDAExecutionProvider", {'device_id': device})]
         self.initializer = {}
         self.input_map = {}
         self.output_map = {}
@@ -39,12 +34,9 @@ class ONNXGraph(object):
         if self.model:
             self.topologize_graph()
             self.prepare_initializer()
-            self.set_nodename()
             self.set_index()
-
-    def reset(self):
-        self.get_inp_oup()
-        self.get_shape_type()
+            self.get_inp_oup()
+            self.get_shape_type()
 
     def prepare_initializer(self):
         self.initializer.clear()
@@ -57,15 +49,11 @@ class ONNXGraph(object):
         self.tensor_name_shape_map.clear()
         self.input.clear()
         self.output.clear()
-        ort_session = ort.InferenceSession(self.model.SerializeToString(), providers=self.providers)
-        for input in ort_session.get_inputs():
-            self.network_inputs.append(input.name)
-            self.tensor_name_shape_map[input.name] = input.shape
-            self.value_name_type_map[input.name] = onnx.TensorProto.FLOAT
-        for output in ort_session.get_outputs():
+        for input in self.graph.input:
+            if isinstance(self.get_tensor_producer(input.name), str):
+                self.network_inputs.append(input.name)
+        for output in self.graph.output:
             self.network_outputs.append(output.name)
-            self.tensor_name_shape_map[output.name] = output.shape
-            self.value_name_type_map[output.name] = onnx.TensorProto.FLOAT
         self.input = self.network_inputs.copy()
         self.output = self.network_outputs.copy()
 
@@ -78,7 +66,16 @@ class ONNXGraph(object):
                     self.output.append(oup)
 
     def get_shape_type(self):
+        for input in self.graph.input:
+            if input.name in self.network_inputs:
+                self.tensor_name_shape_map[input.name] = [x.dim_value for x in input.type.tensor_type.shape.dim]
+                self.value_name_type_map[input.name] = input.type.tensor_type.elem_type
+        for output in self.graph.output:
+            self.tensor_name_shape_map[output.name] = [x.dim_value for x in output.type.tensor_type.shape.dim]
+            self.value_name_type_map[output.name] = output.type.tensor_type.elem_type
+
         model = infer_shapes(self.model)
+
         for init in self.initializer:
             self.tensor_name_shape_map[init] = list(self.get_initializer(init).shape)
         inferred_value_info = model.graph.value_info
@@ -125,7 +122,9 @@ class ONNXGraph(object):
         initializer.name = initializer_name
         if idx is not None:
             self.graph.initializer.remove(self.graph.initializer[idx])
-        self.graph.initializer.insert(idx, initializer)
+            self.graph.initializer.insert(idx, initializer)
+        else:
+            self.graph.initializer.append(initializer)
         self.prepare_initializer()
 
     def topologize_graph(self):
@@ -173,10 +172,6 @@ class ONNXGraph(object):
         if initializer_name in self.initializer:
             del self.initializer[initializer_name]
 
-    def set_nodename(self):
-        for node_idx, node in enumerate(self.graph.node):
-            node.name = str(node.op_type) + str(node_idx)
-
     def set_index(self):
         for node_idx, node in enumerate(self.graph.node):
             self.name_idx_map[node.name] = node_idx
@@ -185,7 +180,6 @@ class ONNXGraph(object):
         return self.name_idx_map[node.name]
 
     def update_model(self):
-        self.set_nodename()
         self.set_index()
         opset_info = copy.deepcopy(self.model.opset_import[0])
         if opset_info.version < 13:
@@ -208,7 +202,6 @@ class ONNXGraph(object):
         target_graph.output = copy.deepcopy(self.output)
         target_graph.name_idx_map = self.name_idx_map.copy()
         target_graph.output_dir = self.output_dir
-        target_graph.providers = self.providers
 
 
 def setup_logger(args):
