@@ -23,6 +23,8 @@ def brecq(graph_ori, graph, act_clip_val, weight_clip_val, args):
     already = []
     _log_head = 'Qdrop' if args.drop is True else 'Brecq'
     for node in graph_ori.graph.node:
+        if node.name in args.skip_layers:
+            continue
         if node.op_type in LEARNABLE_LAYER_TYPES and node.name not in already:
             block_layer_list = get_block_from_first(graph, node, args)
             # If the last node has weight equalized, it cannot be the last.

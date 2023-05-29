@@ -196,8 +196,10 @@ class AdaQLayer(torch.nn.Module):
         kernel_size = helper.get_attribute_value(self.attr_name_map['kernel_shape'])
         padding = helper.get_attribute_value(self.attr_name_map['pads'])[:2]
         stride = helper.get_attribute_value(self.attr_name_map['strides'])
-        # We fix output_padding=0 since deploy do not support.
-        output_padding = 0
+        if "output_padding" in self.attr_name_map:
+            output_padding = helper.get_attribute_value(self.attr_name_map['output_padding'])
+        else:
+            output_padding = 0
         o_c = weight.shape[0]
         i_c = weight.shape[1] * groups
         bias_flag = bias is not None
