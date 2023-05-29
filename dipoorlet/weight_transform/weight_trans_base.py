@@ -24,7 +24,6 @@ def weight_calibration(onnx_graph, act_clip_val, weight_clip_val, args):
         update_model_path('update_bias_model', args)
         model = onnx.load(args.model)
         graph_after_wt = ONNXGraph(model, args.output_dir)
-        graph_after_wt.reset()
         # Update bias range.
         weight_clip_val = find_clip_val_minmax_weight(graph_after_wt, args)
 
@@ -35,7 +34,6 @@ def weight_calibration(onnx_graph, act_clip_val, weight_clip_val, args):
         update_model_path('weight_equal_model', args)
         model = onnx.load(args.model)
         graph_after_wt = ONNXGraph(model, args.output_dir)
-        graph_after_wt.reset()
         act_clip_val, weight_clip_val = tensor_calibration(graph_after_wt, args)
 
     if args.update_bn:
@@ -45,7 +43,6 @@ def weight_calibration(onnx_graph, act_clip_val, weight_clip_val, args):
         update_model_path('update_bn_model', args)
         model = onnx.load(args.model)
         graph_after_wt = ONNXGraph(model, args.output_dir)
-        graph_after_wt.reset()
         if dist.get_rank() == 0:
             logger.info("Re calibration...")
             act_clip_val, weight_clip_val = tensor_calibration(graph_after_wt, args)

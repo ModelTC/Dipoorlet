@@ -186,11 +186,6 @@ def forward_get_minmax(onnx_graph, args):
     ort_session = ort.InferenceSession(net.SerializeToString(), providers=providers)
     if 'CUDAExecutionProvider' not in ort_session.get_provider_options():
         logger.warning("CUDA may not used. Please check your ort/cuda/cudnn version.")
-    input_name_list = []
-    input_name_shape_map = {}
-    for input in ort_session.get_inputs():
-        input_name_list.append(input.name)
-        input_name_shape_map[input.name] = input.shape
     # Start activation quantization.
     statistics = {}
     t1 = 0
@@ -198,9 +193,9 @@ def forward_get_minmax(onnx_graph, args):
     rank_num = args.data_num // args.world_size
     data_st_idx = args.rank * rank_num
     data_ed_idx = min((args.rank + 1) * rank_num, args.data_num)
-    for data in tqdm(input_data_generator(args.input_dir, input_name_list, data_st_idx, data_ed_idx), desc='Minmax update'):
-        for name in input_name_list:
-            ort_inputs[name] = data[name][:].reshape(input_name_shape_map[name])
+    for data in tqdm(input_data_generator(args.input_dir, onnx_graph.network_inputs, data_st_idx, data_ed_idx), desc='Minmax update'):
+        for name in onnx_graph.network_inputs:
+            ort_inputs[name] = data[name][:].reshape(onnx_graph.get_tensor_shape(name))
         st = time.time()
         outputs = [output.name for output in ort_session.get_outputs()]
         ort_outputs = ort_session.run(outputs, ort_inputs)
@@ -238,21 +233,16 @@ def forward_get_hist(onnx_graph, stats_min_max, args):
     ort_session = ort.InferenceSession(net.SerializeToString(), providers=providers)
     if 'CUDAExecutionProvider' not in ort_session.get_provider_options():
         logger.warning("CUDA may not used. Please check your ort/cuda/cudnn version.")
-    input_name_list = []
-    input_name_shape_map = {}
-    for input in ort_session.get_inputs():
-        input_name_list.append(input.name)
-        input_name_shape_map[input.name] = input.shape
     # Start activation quantization.
     statistics = {}
     ort_inputs = {}
     rank_num = args.data_num // args.world_size
     data_st_idx = args.rank * rank_num
     data_ed_idx = min((args.rank + 1) * rank_num, args.data_num)
-    for data in tqdm(input_data_generator(args.input_dir, input_name_list, data_st_idx, data_ed_idx),
+    for data in tqdm(input_data_generator(args.input_dir, onnx_graph.network_inputs, data_st_idx, data_ed_idx),
                      desc='Hist update: {}'.format(args.rank)):
-        for name in input_name_list:
-            ort_inputs[name] = data[name][:].reshape(input_name_shape_map[name])
+        for name in onnx_graph.network_inputs:
+            ort_inputs[name] = data[name][:].reshape(onnx_graph.get_tensor_shape(name))
         outputs = [output.name for output in ort_session.get_outputs()]
         ort_outputs = ort_session.run(outputs, ort_inputs)
         ort_outs = OrderedDict(zip(outputs, ort_outputs))
@@ -288,11 +278,6 @@ def forward_net_octav(onnx_graph, args):
     ort_session = ort.InferenceSession(net.SerializeToString(), providers=providers)
     if 'CUDAExecutionProvider' not in ort_session.get_provider_options():
         logger.warning("CUDA may not used. Please check your ort/cuda/cudnn version.")
-    input_name_list = []
-    input_name_shape_map = {}
-    for input in ort_session.get_inputs():
-        input_name_list.append(input.name)
-        input_name_shape_map[input.name] = input.shape
     # Start activation quantization.
     statistics = {}
     t1 = 0
@@ -300,11 +285,11 @@ def forward_net_octav(onnx_graph, args):
     rank_num = args.data_num // args.world_size
     data_st_idx = args.rank * rank_num
     data_ed_idx = min((args.rank + 1) * rank_num, args.data_num)
-    for data in tqdm(input_data_generator(args.input_dir, input_name_list, data_st_idx, data_ed_idx),
+    for data in tqdm(input_data_generator(args.input_dir, onnx_graph.network_inputs, data_st_idx, data_ed_idx),
                      desc='OCTAV update rank: {}'.format(args.rank)):
         ort_inputs = {}
-        for name in input_name_list:
-            ort_inputs[name] = data[name][:].reshape(input_name_shape_map[name])
+        for name in onnx_graph.network_inputs:
+            ort_inputs[name] = data[name][:].reshape(onnx_graph.get_tensor_shape(name))
         st = time.time()
         outputs = [output.name for output in ort_session.get_outputs()]
         ort_outputs = ort_session.run(outputs, ort_inputs)
@@ -361,15 +346,10 @@ def forward_get_tensor(graph, net, index, args):
     device = rank % torch.cuda.device_count()
     providers = [("CUDAExecutionProvider", {'device_id': device})]
     ort_session = ort.InferenceSession(net.SerializeToString(), providers=providers)
-    input_name_list = []
-    input_name_shape_map = {}
-    for input in ort_session.get_inputs():
-        input_name_list.append(input.name)
-        input_name_shape_map[input.name] = input.shape
     ort_inputs = {}
     for data in input_data_generator(args.input_dir, graph.network_inputs, index, index + 1):
-        for name in input_name_list:
-            ort_inputs[name] = data[name][:].reshape(input_name_shape_map[name])
+        for name in graph.network_inputs:
+            ort_inputs[name] = data[name][:].reshape(graph.get_tensor_shape(name))
         outputs = [output.name for output in ort_session.get_outputs()]
         ort_outputs = ort_session.run(outputs, ort_inputs)
         ort_outs = OrderedDict(zip(outputs, ort_outputs))

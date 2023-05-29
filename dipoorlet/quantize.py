@@ -207,24 +207,28 @@ def make_quant_dequant(tensor_name, tensor_shape, scale_val, zero_point_val, nee
     tensor_dequant = helper.make_tensor_value_info(tensor_name + DQTENSORSUFFIX, TensorProto.FLOAT, tensor_shape)
     if per_channel:
         q_node = helper.make_node(
-            "QuantizeLinear",
-            [tensor_name, tensor_name + '_scale', tensor_name + '_zero_point'],
-            [tensor_name + QTENSORSUFFIX],
+            name=tensor_name+"_QuantizeLinear",
+            op_type="QuantizeLinear",
+            inputs=[tensor_name, tensor_name + '_scale', tensor_name + '_zero_point'],
+            outputs=[tensor_name + QTENSORSUFFIX],
             axis=1 if need_transpose else 0)
         dq_node = helper.make_node(
-            "DequantizeLinear",
-            [tensor_name + QTENSORSUFFIX, tensor_name + '_scale', tensor_name + '_zero_point'],
-            [tensor_name + DQTENSORSUFFIX],
+            name=tensor_name + "_DequantizeLinear",
+            op_type="DequantizeLinear",
+            inputs=[tensor_name + QTENSORSUFFIX, tensor_name + '_scale', tensor_name + '_zero_point'],
+            outputs=[tensor_name + DQTENSORSUFFIX],
             axis=1 if need_transpose else 0)
     else:
         q_node = helper.make_node(
-            "QuantizeLinear",
-            [tensor_name, tensor_name + '_scale', tensor_name + '_zero_point'],
-            [tensor_name + QTENSORSUFFIX])
+            name=tensor_name + "_QuantizeLinear",
+            op_type="QuantizeLinear",
+            inputs=[tensor_name, tensor_name + '_scale', tensor_name + '_zero_point'],
+            outputs=[tensor_name + QTENSORSUFFIX])
         dq_node = helper.make_node(
-            "DequantizeLinear",
-            [tensor_name + QTENSORSUFFIX, tensor_name + '_scale', tensor_name + '_zero_point'],
-            [tensor_name + DQTENSORSUFFIX])
+            name=tensor_name + "_DequantizeLinear",
+            op_type="DequantizeLinear",
+            inputs=[tensor_name + QTENSORSUFFIX, tensor_name + '_scale', tensor_name + '_zero_point'],
+            outputs=[tensor_name + DQTENSORSUFFIX])
     graph_quant = helper.make_graph(
         [q_node, dq_node],
         'graph_quant',

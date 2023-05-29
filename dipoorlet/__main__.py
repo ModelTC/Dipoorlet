@@ -75,7 +75,6 @@ if dist.get_rank() == 0:
         logger.info("The onnx model is invalid:{}, please rectifie your model and restart Dipoorlet.".format(e))
         sys.exit()
 onnx_graph = ONNXGraph(model, args.output_dir)
-onnx_graph.reset()
 
 # Assgin rank index to calibration GPU wise.
 # Split the dataset averagly.
