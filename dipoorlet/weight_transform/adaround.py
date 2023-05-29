@@ -20,6 +20,8 @@ def adaround(graph_ori, graph, act_clip_val, weight_clip_val, args):
     fp_act_cache = ActivationCache(graph_ori, args, rank_st, rank_ed)
     prev_act_cache = None
     for node in graph_ori.graph.node:
+        if node.name in args.skip_layers:
+            continue
         if node.op_type in LEARNABLE_LAYER_TYPES:
             # We can not mimic when node has weight equalized.
             if args.we and node_has_equalized(graph, node):
