@@ -207,7 +207,7 @@ def make_quant_dequant(tensor_name, tensor_shape, scale_val, zero_point_val, nee
     tensor_dequant = helper.make_tensor_value_info(tensor_name + DQTENSORSUFFIX, TensorProto.FLOAT, tensor_shape)
     if per_channel:
         q_node = helper.make_node(
-            name=tensor_name+"_QuantizeLinear",
+            name=tensor_name + "_QuantizeLinear",
             op_type="QuantizeLinear",
             inputs=[tensor_name, tensor_name + '_scale', tensor_name + '_zero_point'],
             outputs=[tensor_name + QTENSORSUFFIX],

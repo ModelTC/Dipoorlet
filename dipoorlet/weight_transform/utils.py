@@ -1,18 +1,11 @@
-import copy
-
 import numpy as np
 import torch
-import torch.nn.functional as F
-from onnx import helper, numpy_helper
+from onnx import numpy_helper
 
-from ..forward_net import ActivationCache
-from ..platform_settings import platform_setting_table
-from ..quantize import QUANT_NODE_NAME_LIST, get_qnode_by_param, quant_graph
-from ..utils import logger
-from .ada_quant_layer import *
-from .weight_equalization import node_has_equalized
+from ..quantize import get_qnode_by_param
 
 LEARNABLE_LAYER_TYPES = ['Conv', 'Gemm', 'ConvTranspose']
+__all__ = ['LEARNABLE_LAYER_TYPES', 'follow_relu', 'following_relu', 'update_weight', 'get_quant_tensor', 'get_block_from_first']
 
 
 def follow_relu(graph, node):

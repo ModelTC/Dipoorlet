@@ -1,8 +1,8 @@
 import heapq
+import math
 import os
 
 import numpy as np
-import math
 import onnx
 import torch.distributed as dist
 from onnx import numpy_helper
@@ -59,11 +59,11 @@ def quantize_profiling_multipass(graph_after_wt, graph_ori, act_clip_val, weight
         fp_tensors = forward_get_tensor(graph_ori, fp_net, i, args)
         q_tensors = forward_get_tensor(graph_q, q_net, i, args)
         for node in quant_node_list:
-            tensor_name = node.output[0]
-            if tensor_name not in layer_cosine_dict:
-                layer_cosine_dict[tensor_name] = cos_similarity(fp_tensors[tensor_name], q_tensors[tensor_name])
-            else:
-                layer_cosine_dict[tensor_name] += cos_similarity(fp_tensors[tensor_name], q_tensors[tensor_name])
+            for tensor_name in node.output:
+                if tensor_name not in layer_cosine_dict:
+                    layer_cosine_dict[tensor_name] = cos_similarity(fp_tensors[tensor_name], q_tensors[tensor_name])
+                else:
+                    layer_cosine_dict[tensor_name] += cos_similarity(fp_tensors[tensor_name], q_tensors[tensor_name])
         for tensor_name in graph_after_wt.network_outputs:
             q_tensor_name = tensor_name
             if tensor_name + DQTENSORSUFFIX in q_tensors:
