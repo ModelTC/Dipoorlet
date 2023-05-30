@@ -2,18 +2,19 @@ import copy
 import time
 from collections import OrderedDict
 
-import torch
-import torch.distributed as dist
 import numpy as np
 import onnx
 import onnxruntime as ort
-from onnx.helper import make_tensor_value_info as mtvi
+import torch
+import torch.distributed as dist
 from onnx.helper import make_graph, make_model
+from onnx.helper import make_tensor_value_info as mtvi
 from tqdm import tqdm
 
 from .platform_settings import platform_setting_table
 from .quantize import QUANT_NODE_NAME_LIST
-from .utils import logger, ONNXGraph
+from .utils import ONNXGraph, logger
+
 ort.set_default_logger_severity(3)
 
 
@@ -193,7 +194,8 @@ def forward_get_minmax(onnx_graph, args):
     rank_num = args.data_num // args.world_size
     data_st_idx = args.rank * rank_num
     data_ed_idx = min((args.rank + 1) * rank_num, args.data_num)
-    for data in tqdm(input_data_generator(args.input_dir, onnx_graph.network_inputs, data_st_idx, data_ed_idx), desc='Minmax update'):
+    for data in tqdm(input_data_generator(args.input_dir, onnx_graph.network_inputs, data_st_idx, data_ed_idx),
+                     desc='Minmax update'):
         for name in onnx_graph.network_inputs:
             ort_inputs[name] = data[name][:].reshape(onnx_graph.get_tensor_shape(name))
         st = time.time()

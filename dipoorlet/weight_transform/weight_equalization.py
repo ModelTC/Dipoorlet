@@ -4,6 +4,7 @@ import numpy as np
 from onnx import numpy_helper
 
 from ..utils import ONNXGraph, logger
+from .utils import update_weight
 
 
 def find_successor(cur_node, graph):
@@ -37,10 +38,6 @@ def node_has_equalized(graph, node):
 def weight_equalization(graph, args):
     graph_we = ONNXGraph()
     graph.copy_to(graph_we)
-
-    def update_weight(graph, weight_tensor, weight_name):
-        name = graph.initializer[weight_name][0].name
-        graph.set_initializer(name, weight_tensor)
 
     for node in graph_we.graph.node:
         if node.op_type == 'Conv':
