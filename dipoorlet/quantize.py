@@ -51,7 +51,7 @@ def insert_fake_quant_node(graph, node, act_quantized, data_range_list, args):
             if isinstance(graph.get_tensor_producer(node.input[0]), str):
                 continue
             _prev = graph.get_tensor_producer(node.input[0])
-            if not isinstance(_prev, str) and _prev.op_type in MERGE_RELU:
+            if len(node.input) == 1 and not isinstance(_prev, str) and _prev.op_type in MERGE_RELU:
                 continue
 
         q_nodes = None
