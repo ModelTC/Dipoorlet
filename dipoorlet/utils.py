@@ -50,7 +50,8 @@ class ONNXGraph(object):
         self.input.clear()
         self.output.clear()
         for input in self.graph.input:
-            if isinstance(self.get_tensor_producer(input.name), str):
+            if isinstance(self.get_tensor_producer(input.name), str) and \
+                    input.name not in self.initializer:
                 self.network_inputs.append(input.name)
         for output in self.graph.output:
             self.network_outputs.append(output.name)
