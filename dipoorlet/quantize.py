@@ -29,15 +29,17 @@ def quant_graph(onnx_graph, clip_val, args):
             quant_node_list.append(node)
 
     act_quantized = []
+    merged_relu = []
     for node in quant_node_list:
-        insert_fake_quant_node(graph_q, node, act_quantized, clip_val, args)
+        insert_fake_quant_node(graph_q, node, act_quantized, clip_val, merged_relu, args)
     if platform_setting_table[args.deploy]['quantize_network_output']:
         insert_fake_quant_node_output(graph_q, clip_val, args)
     graph_q.update_model()
+    quant_node_list = [node for node in quant_node_list if node not in merged_relu]
     return graph_q, quant_node_list
 
 
-def insert_fake_quant_node(graph, node, act_quantized, data_range_list, args):
+def insert_fake_quant_node(graph, node, act_quantized, data_range_list, merged_relu, args):
     param = platform_setting_table[args.deploy]
     # We now quant input and weight tp INT8 but left output fp32.
     find_weight = False
@@ -49,9 +51,11 @@ def insert_fake_quant_node(graph, node, act_quantized, data_range_list, args):
         # Merge ReLU
         if node.op_type in RELU_TYPE:
             if isinstance(graph.get_tensor_producer(node.input[0]), str):
+                merged_relu.append(node)
                 continue
             _prev = graph.get_tensor_producer(node.input[0])
             if len(node.input) == 1 and not isinstance(_prev, str) and _prev.op_type in MERGE_RELU:
+                merged_relu.append(node)
                 continue
 
         q_nodes = None

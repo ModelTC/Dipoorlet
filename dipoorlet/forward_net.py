@@ -62,6 +62,13 @@ class ActivationCache(object):
                 self.activation_cache[in_tensor].append(
                     data[in_tensor][:].reshape(*self.graph.get_tensor_shape(in_tensor)).copy())
 
+    def clear_cache(self):
+        names = list(self.activation_cache.keys())
+        for name in names:
+            if name in self.graph.network_inputs:
+                continue
+            del self.activation_cache[name]
+
     def input_generator(self, tensor_name_list):
         # TODO batch generator.
         data = {}

@@ -9,12 +9,13 @@ import torch.distributed as dist
 
 from .deploy import to_deploy
 from .dist_helper import init_from_mpi, init_from_slurm
-from .profiling import (quantize_profiling_multipass, show_model_profiling_res,
+from .profiling import (quantize_profiling_multipass, quantize_profiling_layerwise,
+                        show_model_profiling_res, show_layerwise_profiling_res,
                         show_model_ranges, weight_need_perchannel)
 from .tensor_cali import tensor_calibration
 from .utils import (ONNXGraph, load_clip_val, logger, reduce_clip_val,
                     reduce_profiling_res, save_clip_val, save_profiling_res,
-                    setup_logger)
+                    reduce_error_res, save_profiling_error, setup_logger)
 from .weight_transform import weight_calibration
 
 parser = argparse.ArgumentParser()
@@ -39,6 +40,10 @@ parser.add_argument("--savefp", help="Save FP output of model.", action="store_t
 parser.add_argument("--ada_bs", help="Batch size for adaround.", type=int, default=64)
 parser.add_argument("--ada_epoch", help="Epoch for adaround.", type=int, default=5000)
 parser.add_argument("--skip_layers", help="Skip layer name", default=[], type=str, nargs='+')
+parser.add_argument("--layerwise_error_prof", help='Profiling per-layer quantitative error', action="store_true")
+parser.add_argument("--eval", help='The evaluation of profiling quantitative error', type=str,
+                    choices=['cosine', 'abs_gap'], default="cosine")
+parser.add_argument("--sort_way", help='The way of sort error profiling results', type=str, default="avg")
 parser.add_argument("--stpu_wg", help="Enable winograd for stpu.", action="store_true")
 parser.add_argument("--skip_prof_layer", help="Skip profiling by layer.", default=False, action='store_true')
 parser.add_argument("--slurm", help="Launch task from slurm", default=False, action='store_true')
@@ -112,6 +117,19 @@ if dist.get_rank() == 0:
     show_model_profiling_res(graph, layer_cosine_dict, model_cosine_dict, quant_node_list, args)
     show_model_ranges(graph, act_clip_val, weight_clip_val, args)
     weight_need_perchannel(graph, args)
+dist.barrier()
+
+# Profiling Layerwise error Distributed.
+if args.layerwise_error_prof:
+    if dist.get_rank() == 0:
+        logger.info("Profiling layerwise quantitative error ...")
+    model_error_dict = quantize_profiling_layerwise(graph, graph_ori, act_clip_val, weight_clip_val, args)
+    save_profiling_error(model_error_dict, args)
+    dist.barrier()
+    if dist.get_rank() == 0:
+        model_error_dict = reduce_error_res(dist.get_world_size(), args)
+        show_layerwise_profiling_res(graph, model_error_dict, quant_node_list, args)
+    dist.barrier()
 
 # Deploy
 if dist.get_rank() == 0:

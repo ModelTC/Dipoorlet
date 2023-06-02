@@ -227,6 +227,11 @@ def cos_similarity(ta, tb):
         / np.sqrt(np.square(tb).sum())
 
 
+def abs_gap(ta, tb):
+    assert ta.shape == tb.shape
+    return np.mean(np.abs(ta - tb))
+
+
 def dispatch_functool(func):
     registry = {}
 
@@ -354,3 +359,28 @@ def reduce_profiling_res(rank_size, args, layer_res_fname='layer_res.json', mode
                 model_cosine_dict[k][0] += v[0] / float(rank_size)
                 model_cosine_dict[k][1] = min(model_cosine_dict[k][1], v[1])
     return layer_cosine_dict, model_cosine_dict
+
+
+def save_profiling_error(model_error_dict, args, error_res_fname='error_res.json'):
+    rank = dist.get_rank()
+    for k, v in model_error_dict.items():
+        model_error_dict[k][0] = float(v[0])
+        model_error_dict[k][1] = float(v[1])
+    with open(os.path.join(args.output_dir, error_res_fname + '.rank{}'.format(rank)), 'w') as f:
+        json.dump(model_error_dict, f, indent=4)
+
+
+def reduce_error_res(rank_size, args, error_res_fname='error_res.json'):
+    '''Collect profiling res from each GPU and reduce.
+    '''
+    with open(os.path.join(args.output_dir, error_res_fname + '.rank0'), 'r') as f:
+        model_error_dict = json.load(f)
+    for k, v in model_error_dict.items():
+        model_error_dict[k][0] = v[0] / float(rank_size)
+    for i in range(1, rank_size):
+        with open(os.path.join(args.output_dir, error_res_fname + '.rank{}'.format(i)), 'r') as f:
+            _model_error_dict = json.load(f)
+            for k, v in _model_error_dict.items():
+                model_error_dict[k][0] += v[0] / float(rank_size)
+                model_error_dict[k][1] = min(model_error_dict[k][1], v[1])
+    return model_error_dict
