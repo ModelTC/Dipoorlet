@@ -27,19 +27,16 @@ def quant_graph(onnx_graph, clip_val, args):
             continue
         if node.op_type in platform_setting_table[args.deploy]['quant_nodes']:
             quant_node_list.append(node)
-
     act_quantized = []
-    merged_relu = []
     for node in quant_node_list:
-        insert_fake_quant_node(graph_q, node, act_quantized, clip_val, merged_relu, args)
+        insert_fake_quant_node(graph_q, node, act_quantized, clip_val, args)
     if platform_setting_table[args.deploy]['quantize_network_output']:
         insert_fake_quant_node_output(graph_q, clip_val, args)
     graph_q.update_model()
-    quant_node_list = [node for node in quant_node_list if node not in merged_relu]
     return graph_q, quant_node_list
 
 
-def insert_fake_quant_node(graph, node, act_quantized, data_range_list, merged_relu, args):
+def insert_fake_quant_node(graph, node, act_quantized, data_range_list, args):
     param = platform_setting_table[args.deploy]
     # We now quant input and weight tp INT8 but left output fp32.
     find_weight = False
@@ -51,11 +48,9 @@ def insert_fake_quant_node(graph, node, act_quantized, data_range_list, merged_r
         # Merge ReLU
         if node.op_type in RELU_TYPE:
             if isinstance(graph.get_tensor_producer(node.input[0]), str):
-                merged_relu.append(node)
                 continue
             _prev = graph.get_tensor_producer(node.input[0])
             if len(node.input) == 1 and not isinstance(_prev, str) and _prev.op_type in MERGE_RELU:
-                merged_relu.append(node)
                 continue
 
         q_nodes = None
@@ -97,6 +92,28 @@ def insert_fake_quant_node(graph, node, act_quantized, data_range_list, merged_r
             act_quantized.append(in_tensor)
 
     graph.topologize_graph()
+
+
+def delete_fake_quant_node(graph, node):
+
+    def get_input_idx(node, input):
+        for i, inp in enumerate(node.input):
+            if inp == input:
+                return i
+
+    inputs = copy.deepcopy(node.input)
+    for input in inputs:
+        if not input.endswith("dq"):
+            continue
+        dequant_node = graph.get_tensor_producer(input)
+        quant_node = graph.get_tensor_producer(dequant_node.input[0])
+        quant_consumers = graph.get_tensor_consumer(dequant_node.output[0])
+        for consumer in quant_consumers:
+            consumer.input.insert(get_input_idx(consumer, quant_node.input[0] + '_dq'), quant_node.input[0])
+            if dequant_node.output[0] in consumer.input:
+                consumer.input.remove(dequant_node.output[0])
+        graph.graph.node.remove(dequant_node)
+        graph.graph.node.remove(quant_node)
 
 
 def insert_fake_quant_node_output(graph, clip_val, args):

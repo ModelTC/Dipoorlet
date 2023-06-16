@@ -363,3 +363,18 @@ def forward_get_tensor(graph, net, index, args):
         ort_outputs = ort_session.run(outputs, ort_inputs)
         ort_outs = OrderedDict(zip(outputs, ort_outputs))
     return copy.deepcopy(ort_outs)
+
+
+def forward_get_output(graph, net, index, args):
+    rank = dist.get_rank()
+    device = rank % torch.cuda.device_count()
+    providers = [("CUDAExecutionProvider", {'device_id': device})]
+    ort_session = ort.InferenceSession(net.SerializeToString(), providers=providers)
+    ort_inputs = {}
+    for data in input_data_generator(args.input_dir, graph.network_inputs, index, index + 1):
+        for name in graph.network_inputs:
+            ort_inputs[name] = data[name][:].reshape(graph.get_tensor_shape(name))
+        outputs = [output.name for output in ort_session.get_outputs()]
+        ort_outputs = ort_session.run(outputs, ort_inputs)
+        ort_outs = OrderedDict(zip(outputs, ort_outputs))
+    return copy.deepcopy(ort_outs)

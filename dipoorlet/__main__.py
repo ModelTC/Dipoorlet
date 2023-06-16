@@ -43,7 +43,6 @@ parser.add_argument("--skip_layers", help="Skip layer name", default=[], type=st
 parser.add_argument("--layerwise_error_prof", help='Profiling per-layer quantitative error', action="store_true")
 parser.add_argument("--eval", help='The evaluation of profiling quantitative error', type=str,
                     choices=['cosine', 'abs_gap'], default="cosine")
-parser.add_argument("--sort_way", help='The way of sort error profiling results', type=str, default="avg")
 parser.add_argument("--stpu_wg", help="Enable winograd for stpu.", action="store_true")
 parser.add_argument("--skip_prof_layer", help="Skip profiling by layer.", default=False, action='store_true')
 parser.add_argument("--slurm", help="Launch task from slurm", default=False, action='store_true')
@@ -117,7 +116,6 @@ if dist.get_rank() == 0:
     show_model_profiling_res(graph, layer_cosine_dict, model_cosine_dict, quant_node_list, args)
     show_model_ranges(graph, act_clip_val, weight_clip_val, args)
     weight_need_perchannel(graph, args)
-dist.barrier()
 
 # Profiling Layerwise error Distributed.
 if args.layerwise_error_prof:
@@ -129,7 +127,6 @@ if args.layerwise_error_prof:
     if dist.get_rank() == 0:
         model_error_dict = reduce_error_res(dist.get_world_size(), args)
         show_layerwise_profiling_res(graph, model_error_dict, quant_node_list, args)
-    dist.barrier()
 
 # Deploy
 if dist.get_rank() == 0:
