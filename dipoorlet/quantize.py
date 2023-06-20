@@ -102,8 +102,8 @@ def insert_fake_quant_node_output(graph, clip_val, args):
         q_nodes, _, _ = get_qnode_by_param(param['qi_params'], out_tensor, graph.get_tensor_shape(out_tensor),
                                            clip_val[out_tensor])
         graph.insert_qnodes_purely(q_nodes=q_nodes, idx=graph.index(graph.get_tensor_producer(out_tensor)) + 1)
-        graph.network_outputs.remove(out_tensor)
-        graph.network_outputs.append(q_nodes.output[0])
+        graph.del_network_output(out_tensor)
+        graph.add_network_output(q_nodes.output[0])
     graph.topologize_graph()
     return
 

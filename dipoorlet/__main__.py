@@ -32,7 +32,7 @@ parser.add_argument("-A", "--act_quant", help="algorithm of activation quantizat
                     choices=['minmax', 'hist', 'mse'], default='mse')
 parser.add_argument("-D", "--deploy", help="deploy platform",
                     choices=['trt', 'stpu', 'magicmind', 'rv', 'atlas',
-                             'snpe', 'ti'], required=True)
+                             'snpe', 'ti', 'imx'], required=True)
 parser.add_argument("--bins", help="bins for histogram and kl", default=2048)
 parser.add_argument("--threshold", help="threshold for histogram", default=0.99999, type=float)
 parser.add_argument("--savefp", help="Save FP output of model.", action="store_true")
@@ -67,14 +67,14 @@ logger.parent = None
 
 start = time.time()
 model = onnx.load(args.model)
+onnx_graph = ONNXGraph(model, args.output_dir)
 
 if dist.get_rank() == 0:
     try:
-        onnx.checker.check_model(model)
+        onnx.checker.check_model(onnx_graph.model)
     except onnx.checker.ValidationError as e:
         logger.info("The onnx model is invalid:{}, please rectifie your model and restart Dipoorlet.".format(e))
         sys.exit()
-onnx_graph = ONNXGraph(model, args.output_dir)
 
 # Assgin rank index to calibration GPU wise.
 # Split the dataset averagly.

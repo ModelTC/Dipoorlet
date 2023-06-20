@@ -32,11 +32,32 @@ class ONNXGraph(object):
         self.input = []
         self.output = []
         if self.model:
+            self.replace_upsample_op_with_resize()
             self.topologize_graph()
             self.prepare_initializer()
             self.set_index()
             self.get_inp_oup()
             self.get_shape_type()
+
+    def replace_upsample_op_with_resize(self):
+        model = infer_shapes(self.model)
+        for i, _node in enumerate(model.graph.node):
+            if _node.op_type == "Upsample":
+                inputs = []
+                inputs.append(_node.input[0])
+                inputs.append('')
+                inputs.append(_node.input[1])
+                inputs.append('')
+                node = onnx.helper.make_node(
+                    name="Resize_" + str(i),
+                    op_type="Resize",
+                    inputs=inputs,
+                    outputs=_node.output,
+                )
+                model.graph.node.remove(_node)
+                model.graph.node.insert(i, node)
+        self.update_model(model.graph)
+        self.graph = self.model.graph
 
     def prepare_initializer(self):
         self.initializer.clear()
@@ -169,6 +190,15 @@ class ONNXGraph(object):
             self.graph.initializer.append(init)
         self.set_index()
 
+    def del_network_output(self, out_name):
+        idx = self.network_outputs.index(out_name)
+        self.graph.output.pop(idx)
+        self.network_outputs.remove(out_name)
+
+    def add_network_output(self, out_put):
+        self.graph.output.append(out_put)
+        self.network_outputs.append(out_put.name)
+
     def del_initializer(self, initializer_name):
         if initializer_name in self.initializer:
             del self.initializer[initializer_name]
@@ -180,14 +210,17 @@ class ONNXGraph(object):
     def index(self, node):
         return self.name_idx_map[node.name]
 
-    def update_model(self):
-        self.set_index()
+    def set_opset_version(self, version=13):
         opset_info = copy.deepcopy(self.model.opset_import[0])
-        if opset_info.version < 13:
-            opset_info.version = 13
-        self.model = onnx.helper.make_model(self.graph,
-                                            producer_name='updated_model',
-                                            opset_imports=[opset_info])
+        opset_info.version = version
+        self.model.opset_import.insert(0, opset_info)
+
+    def update_model(self, graph=None):
+        self.set_index()
+        if not graph:
+            graph = self.graph
+        self.model = onnx.helper.make_model(graph, producer_name='updated_model')
+        self.set_opset_version()
         self.prepare_initializer()
 
     def copy_to(self, target_graph):

@@ -152,6 +152,25 @@ ti_platform_settings = {
     'deploy_weight': False
 }
 
+imx_platform_settings = {
+    'deploy_exclude_layers': [],
+    'quant_nodes': ['Relu', 'MaxPool', 'Conv', 'Gemm', 'ConvTranspose', 'PRelu', 'AveragePool', 'Add', 'Sigmoid'],
+    'qw_params': {
+        'bit_width': 8,
+        'type': 'Linear',
+        'symmetric': True,
+        'per_channel': False,
+        'log_scale': True
+    },
+    'qi_params': {
+        'bit_width': 8,
+        'type': 'Linear',
+        'symmetric': True,
+        'log_scale': True
+    },
+    'quantize_network_output': True,
+    'deploy_weight': True
+}
 
 platform_setting_table = {
     'trt': trt_platform_settings,
@@ -161,4 +180,5 @@ platform_setting_table = {
     'atlas': atlas_platform_settings,
     'snpe': snpe_platform_settings,
     'ti': ti_platform_settings,
+    'imx': imx_platform_settings
 }
