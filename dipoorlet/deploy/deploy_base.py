@@ -7,6 +7,7 @@ from .deploy_snpe import gen_snpe_encodings
 from .deploy_stpu import gen_stpu_minmax
 from .deploy_ti import gen_ti_json
 from .deploy_trt import gen_trt_range
+from .deploy_imx import gen_imx_range
 
 
 def to_deploy(graph, act_clip_val, weight_clip_val, args, **kwargs):
