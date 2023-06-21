@@ -154,12 +154,12 @@ ti_platform_settings = {
 
 imx_platform_settings = {
     'deploy_exclude_layers': [],
-    'quant_nodes': ['Relu', 'MaxPool', 'Conv', 'Gemm', 'ConvTranspose', 'PRelu', 'AveragePool', 'Add', 'Sigmoid'],
+    'quant_nodes': basic_quant_node,
     'qw_params': {
         'bit_width': 8,
         'type': 'Linear',
         'symmetric': True,
-        'per_channel': False,
+        'per_channel': True,
         'log_scale': True
     },
     'qi_params': {
