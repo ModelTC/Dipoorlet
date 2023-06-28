@@ -19,5 +19,5 @@ def gen_imx_range(graph, clip_val, args, **kwargs):
         clip_val[k] = scale.tolist()
     imx_blob_json = dict()
     imx_blob_json['blob_range'] = clip_val
-    with open(os.path.join(args.output_dir, 'imx_clip_val.json'), 'w') as f:
+    with open(os.path.join(args.output_dir, 'imx_scale.json'), 'w') as f:
         json.dump(imx_blob_json, f, indent=4)

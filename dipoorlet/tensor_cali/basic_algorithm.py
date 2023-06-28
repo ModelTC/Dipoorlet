@@ -72,6 +72,8 @@ def find_clip_val_minmax_weight(onnx_graph, args):
     weight_clip_val = {}
     for name, tensor in weight_tensor.items():
         # BN tracked param do not have shape.
+        if args.deploy == 'imx' and name.endswith('.bias'):
+            continue
         if len(tensor.shape) < 1:
             continue
         if name in need_transpose:
