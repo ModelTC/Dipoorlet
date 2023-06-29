@@ -159,7 +159,7 @@ imx_platform_settings = {
         'bit_width': 8,
         'type': 'Linear',
         'symmetric': True,
-        'per_channel': True,
+        'per_channel': False,
         'log_scale': True
     },
     'qi_params': {

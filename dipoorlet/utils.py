@@ -56,7 +56,7 @@ class ONNXGraph(object):
                 )
                 model.graph.node.remove(_node)
                 model.graph.node.insert(i, node)
-        self.update_model(model.graph)
+        self.update_model()
         self.graph = self.model.graph
 
     def prepare_initializer(self):
@@ -210,17 +210,14 @@ class ONNXGraph(object):
     def index(self, node):
         return self.name_idx_map[node.name]
 
-    def set_opset_version(self, version=13):
-        opset_info = copy.deepcopy(self.model.opset_import[0])
-        opset_info.version = version
-        self.model.opset_import.insert(0, opset_info)
-
-    def update_model(self, graph=None):
+    def update_model(self):
         self.set_index()
-        if not graph:
-            graph = self.graph
-        self.model = onnx.helper.make_model(graph, producer_name='updated_model')
-        self.set_opset_version()
+        opset_info = copy.deepcopy(self.model.opset_import[0])
+        if opset_info.version < 13:
+            opset_info.version = 13
+        self.model = onnx.helper.make_model(self.graph,
+                                            producer_name='updated_model',
+                                            opset_imports=[opset_info])
         self.prepare_initializer()
 
     def copy_to(self, target_graph):

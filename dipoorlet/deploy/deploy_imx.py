@@ -8,6 +8,9 @@ from .deploy_default import deploy_dispatcher
 @deploy_dispatcher.register("imx")
 def gen_imx_range(graph, clip_val, args, **kwargs):
     bit_width = 8
+    removed_keys = [k for k in clip_val if k.endswith(".bias")]
+    for k in removed_keys:
+        del clip_val[k]
     for k, v in clip_val.items():
         clip_max = np.max(np.abs(clip_val[k]), axis=0)
         q_max = [2 ** (bit_width - 1) - 1]
@@ -19,5 +22,5 @@ def gen_imx_range(graph, clip_val, args, **kwargs):
         clip_val[k] = scale.tolist()
     imx_blob_json = dict()
     imx_blob_json['blob_range'] = clip_val
-    with open(os.path.join(args.output_dir, 'imx_clip_val.json'), 'w') as f:
+    with open(os.path.join(args.output_dir, 'imx_scale.json'), 'w') as f:
         json.dump(imx_blob_json, f, indent=4)
