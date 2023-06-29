@@ -40,8 +40,8 @@ class ONNXGraph(object):
             self.get_shape_type()
 
     def replace_upsample_op_with_resize(self):
-        model = infer_shapes(self.model)
-        for i, _node in enumerate(model.graph.node):
+        self.model = infer_shapes(self.model)
+        for i, _node in enumerate(self.model.graph.node):
             if _node.op_type == "Upsample":
                 inputs = []
                 inputs.append(_node.input[0])
@@ -54,10 +54,10 @@ class ONNXGraph(object):
                     inputs=inputs,
                     outputs=_node.output,
                 )
-                model.graph.node.remove(_node)
-                model.graph.node.insert(i, node)
-        self.update_model()
+                self.model.graph.node.remove(_node)
+                self.model.graph.node.insert(i, node)
         self.graph = self.model.graph
+        self.update_model()
 
     def prepare_initializer(self):
         self.initializer.clear()
