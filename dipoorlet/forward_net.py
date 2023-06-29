@@ -9,14 +9,17 @@ import torch
 import torch.distributed as dist
 from onnx.helper import make_graph, make_model
 from onnx.helper import make_tensor_value_info as mtvi
+from onnxruntime_extensions import get_library_path as _get_library_path
 from tqdm import tqdm
 
 from .platform_settings import platform_setting_table
 from .quantize import QUANT_NODE_NAME_LIST
 from .utils import ONNXGraph, logger
+from .custom_ops import QuantDequantFP8
 
 ort.set_default_logger_severity(3)
-
+so = ort.SessionOptions()
+so.register_custom_ops_library(_get_library_path())
 
 class ActivationCache(object):
     # We assume get tensor by sequence.
@@ -96,7 +99,7 @@ class ActivationCache(object):
         sub_graph = self.graph_list[self.name_to_graph_id[subnet_name]]
         sub_net = sub_graph.model
         ort_inputs = {}
-        ort_session = ort.InferenceSession(sub_net.SerializeToString(), providers=self.providers)
+        ort_session = ort.InferenceSession(sub_net.SerializeToString(), so, providers=self.providers)
         for data in input_generator:
             for name in sub_graph.network_inputs:
                 ort_inputs[name] = data[name][:].reshape(*sub_graph.get_tensor_shape(name))
@@ -184,7 +187,7 @@ def forward_get_minmax(onnx_graph, args):
             if output_name not in [_o.name for _o in graph.output]:
                 graph.output.insert(0, onnx.ValueInfoProto(name=output_name))
     providers = [("CUDAExecutionProvider", {'device_id': args.local_rank})]
-    ort_session = ort.InferenceSession(net.SerializeToString(), providers=providers)
+    ort_session = ort.InferenceSession(net.SerializeToString(), so, providers=providers)
     if 'CUDAExecutionProvider' not in ort_session.get_provider_options():
         logger.warning("CUDA may not used. Please check your ort/cuda/cudnn version.")
     # Start activation quantization.
@@ -232,7 +235,7 @@ def forward_get_hist(onnx_graph, stats_min_max, args):
             if output_name not in [_o.name for _o in graph.output]:
                 graph.output.insert(0, onnx.ValueInfoProto(name=output_name))
     providers = [("CUDAExecutionProvider", {'device_id': args.local_rank})]
-    ort_session = ort.InferenceSession(net.SerializeToString(), providers=providers)
+    ort_session = ort.InferenceSession(net.SerializeToString(), so, providers=providers)
     if 'CUDAExecutionProvider' not in ort_session.get_provider_options():
         logger.warning("CUDA may not used. Please check your ort/cuda/cudnn version.")
     # Start activation quantization.
@@ -277,7 +280,7 @@ def forward_net_octav(onnx_graph, args):
             if output_name not in [_o.name for _o in graph.output]:
                 graph.output.insert(0, onnx.ValueInfoProto(name=output_name))
     providers = [("CUDAExecutionProvider", {'device_id': args.local_rank})]
-    ort_session = ort.InferenceSession(net.SerializeToString(), providers=providers)
+    ort_session = ort.InferenceSession(net.SerializeToString(), so, providers=providers)
     if 'CUDAExecutionProvider' not in ort_session.get_provider_options():
         logger.warning("CUDA may not used. Please check your ort/cuda/cudnn version.")
     # Start activation quantization.
@@ -347,7 +350,7 @@ def forward_get_tensor(graph, net, index, args):
     rank = dist.get_rank()
     device = rank % torch.cuda.device_count()
     providers = [("CUDAExecutionProvider", {'device_id': device})]
-    ort_session = ort.InferenceSession(net.SerializeToString(), providers=providers)
+    ort_session = ort.InferenceSession(net.SerializeToString(), so, providers=providers)
     ort_inputs = {}
     for data in input_data_generator(args.input_dir, graph.network_inputs, index, index + 1):
         for name in graph.network_inputs:
