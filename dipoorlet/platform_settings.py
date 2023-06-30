@@ -172,6 +172,30 @@ imx_platform_settings = {
     'deploy_weight': True
 }
 
+fp8_platform_settings = {
+    'deploy_exclude_layers': [],
+    'quant_nodes': basic_quant_node,
+    'qw_params': {
+        'bit_width': 8,
+        'exponent': 3,
+        'mantissa': 4,
+        'type': 'Float',
+        'symmetric': False,
+        'per_channel': False,
+        'log_scale': False
+    },
+    'qi_params': {
+        'bit_width': 8,
+        'exponent': 3,
+        'mantissa': 4,
+        'type': 'Float',
+        'symmetric': False,
+        'log_scale': False
+    },
+    'quantize_network_output': False,
+    'deploy_weight': False
+}
+
 platform_setting_table = {
     'trt': trt_platform_settings,
     'stpu': stpu_platform_settings,
@@ -180,5 +204,6 @@ platform_setting_table = {
     'atlas': atlas_platform_settings,
     'snpe': snpe_platform_settings,
     'ti': ti_platform_settings,
-    'imx': imx_platform_settings
+    'imx': imx_platform_settings,
+    'fp8': fp8_platform_settings
 }

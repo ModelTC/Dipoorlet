@@ -89,6 +89,7 @@ def insert_fake_quant_node(graph, node, act_quantized, data_range_list, args):
             # Output already quantized.
             if in_tensor in act_quantized:
                 continue
+
             graph.insert_qnodes_purely(q_nodes=q_nodes, node=node)
             act_quantized.append(in_tensor)
 
@@ -109,6 +110,10 @@ def insert_fake_quant_node_output(graph, clip_val, args):
 
 
 def get_qnode_by_param(param, in_tensor_name, tensor_shape, range, need_transpose=False):
+    if param['type'] == 'Float':
+        q_node = make_fp8_quant_dequant(param, in_tensor_name, tensor_shape)
+        return q_node, None, None
+
     bit_width = param['bit_width']
     zero_point = [0]
     per_channel = True
@@ -236,4 +241,29 @@ def make_quant_dequant(tensor_name, tensor_shape, scale_val, zero_point_val, nee
         [tensor_dequant],
         initializer=[scale, zero_point],
     )
+    return graph_quant
+
+
+def make_fp8_quant_dequant(param, tensor_name, tensor_shape):
+    in_tensor = helper.make_tensor_value_info(tensor_name, TensorProto.FLOAT, tensor_shape)
+
+    e_val = param['exponent']
+    m_val = param['mantissa']
+    tensor_dequant = helper.make_tensor_value_info(tensor_name + DQTENSORSUFFIX, TensorProto.FLOAT, tensor_shape)
+    q_node = helper.make_node(
+        name=tensor_name + "_QuantDequantFP8",
+        op_type="QuantDequantFP8",
+        inputs=[tensor_name],
+        outputs=[tensor_name + DQTENSORSUFFIX],
+        exponent=float(e_val),
+        mantissa=float(m_val),
+        domain="ai.onnx.contrib")
+
+    graph_quant = helper.make_graph(
+        [q_node],
+        'graph_quant',
+        [in_tensor],
+        [tensor_dequant]
+    )
+
     return graph_quant

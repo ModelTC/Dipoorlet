@@ -32,7 +32,7 @@ parser.add_argument("-A", "--act_quant", help="algorithm of activation quantizat
                     choices=['minmax', 'hist', 'mse'], default='mse')
 parser.add_argument("-D", "--deploy", help="deploy platform",
                     choices=['trt', 'stpu', 'magicmind', 'rv', 'atlas',
-                             'snpe', 'ti', 'imx'], required=True)
+                             'snpe', 'ti', 'imx', 'fp8'], required=True)
 parser.add_argument("--bins", help="bins for histogram and kl", default=2048)
 parser.add_argument("--threshold", help="threshold for histogram", default=0.99999, type=float)
 parser.add_argument("--savefp", help="Save FP output of model.", action="store_true")
