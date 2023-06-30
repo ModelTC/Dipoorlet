@@ -9,6 +9,7 @@ import onnx
 import torch.distributed as dist
 from onnx import TensorProto, numpy_helper
 from onnx.shape_inference import infer_shapes
+from onnxsim import simplify
 
 from .platform_settings import platform_setting_table
 
@@ -33,6 +34,7 @@ class ONNXGraph(object):
         self.output = []
         if self.model:
             self.replace_upsample_op_with_resize()
+            self.simplify_model()
             self.topologize_graph()
             self.prepare_initializer()
             self.set_index()
@@ -58,6 +60,11 @@ class ONNXGraph(object):
                 self.model.graph.node.insert(i, node)
         self.graph = self.model.graph
         self.update_model()
+
+    def simplify_model(self):
+        self.model, check = simplify(self.model)
+        assert check, "Simplified ONNX model could not be validated"
+        self.graph = self.model.graph
 
     def prepare_initializer(self):
         self.initializer.clear()
