@@ -11,8 +11,8 @@ Dipoorlet is an offline quantization tool that can perform offline quantization 
 # Installation
 
 ```
-git clone git@github.com:ModelTC/Dipoorlet.git
-cd dipoorlet
+git clone https://github.com/ModelTC/Dipoorlet.git
+cd Dipoorlet
 python setup.py install
 ```
 
