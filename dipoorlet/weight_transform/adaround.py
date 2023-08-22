@@ -128,7 +128,7 @@ def learning_round_mask(in_tensor, fp_out_tensor, ada_layer, reg, batch_size, ma
             input = in_tensor[st:ed].squeeze(1)
             fp_output = fp_out_tensor[st:ed].squeeze(1)
             output = ada_layer(input)
-            loss = Lp_norm(output, fp_output) + reg(ada_layer.module.round_mask, cur_iter)
+            loss = L2_norm(output, fp_output) + reg(ada_layer.module.round_mask, cur_iter)
             cur_iter += 1
             optimizer.zero_grad()
             loss.backward()
