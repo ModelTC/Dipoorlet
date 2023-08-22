@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import time
+import sys
 
 import numpy as np
 import onnx
@@ -10,6 +11,7 @@ import torch.distributed as dist
 from onnx import TensorProto, numpy_helper
 from onnx.shape_inference import infer_shapes
 from onnxsim import simplify
+from termcolor import colored
 
 from .platform_settings import platform_setting_table
 
@@ -244,16 +246,22 @@ class ONNXGraph(object):
 
 def setup_logger(args):
     global logger
+    fmt = '[%(asctime)s %(name)s] (%(filename)s %(lineno)d): %(levelname)s %(message)s'
+    color_fmt = colored('[%(asctime)s %(name)s]', 'green') + \
+                colored('(%(filename)s %(lineno)d)', 'yellow') + ': %(levelname)s %(message)s'
     logger.setLevel(logging.INFO)
     logger_file = os.path.join(args.output_dir,
                                'log-{}.txt'.format(time.strftime("%Y-%m-%d-%H:%M:%S", time.localtime())))
     with open(logger_file, 'w') as f:
         f.write(str(args) + '\n')
-    file_log = logging.FileHandler(logger_file)
-    file_log.setLevel(logging.INFO)
-    logger.addHandler(file_log)
-    std_log = logging.StreamHandler()
-    logger.addHandler(std_log)
+    file_handler = logging.FileHandler(logger_file)
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(logging.Formatter(fmt=fmt, datefmt='%Y-%m-%d %H:%M:%S'))
+    logger.addHandler(file_handler)
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(logging.Formatter(fmt=color_fmt, datefmt='%Y-%m-%d %H:%M:%S'))
+    logger.addHandler(console_handler)
 
 
 def cos_similarity(ta, tb):
