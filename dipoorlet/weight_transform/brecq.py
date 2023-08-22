@@ -176,7 +176,7 @@ def learning_round_mask(q_in_tensor, fp_in_tensor, fp_out_tensor, ada_block, reg
             input = in_tensor[st:ed].squeeze(1)
             fp_output = fp_out_tensor[st:ed].squeeze(1)
             output = ada_block(input)
-            loss = Lp_norm(output, fp_output)
+            loss = L2_norm(output, fp_output)
             for layer in ada_block.module:
                 if isinstance(layer, AdaQLayer):
                     loss += reg(layer.round_mask, cur_iter)

@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from onnx import helper
 
 __all__ = ["nnie_rest_init", "quant_acti", "quant_weight", "quant_weight_nnie", "quant_acti_nnie",
-           "adaround_reg", "AdaQLayer", "Lp_norm"]
+           "adaround_reg", "AdaQLayer", "L2_norm"]
 
 
 def nnie_rest_init(weight):
@@ -110,8 +110,8 @@ class adaround_reg(nn.Module):
         return self.alpha * (1 - torch.pow((self.rectified_sigmoid(round_mask) - 0.5).abs() * 2, self.beta)).sum()
 
 
-def Lp_norm(pred, tgt, p=2.0):
-    return (pred - tgt).abs().pow(p).sum(1).mean()
+def L2_norm(pred, tgt):
+    return (pred - tgt).pow(2.0).sum(1).mean()
 
 
 class TempDecay:
