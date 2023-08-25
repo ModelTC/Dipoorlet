@@ -43,6 +43,9 @@ parser.add_argument("--stpu_wg", help="Enable winograd for stpu.", action="store
 parser.add_argument("--skip_prof_layer", help="Skip profiling by layer.", default=False, action='store_true')
 parser.add_argument("--slurm", help="Launch task from slurm", default=False, action='store_true')
 parser.add_argument("--mpirun", help="Launch task from mpirun", default=False, action='store_true')
+parser.add_argument("--sparse", help="sparse on/off", default=False, action="store_true")
+parser.add_argument("--sparse_rate", help="sparse rate", type=float, default=0.5)
+parser.add_argument("--pattern", help="sparse pattern", choices=["unstruction"], default="unstruction")
 args = parser.parse_args()
 
 if args.slurm:
