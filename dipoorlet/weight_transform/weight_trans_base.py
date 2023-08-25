@@ -9,6 +9,7 @@ from .bias_correction import bias_correction
 from .brecq import brecq
 from .update_bn import update_bn
 from .weight_equalization import weight_equalization
+from .sparse_quant import sparse_quant
 
 
 def weight_calibration(onnx_graph, act_clip_val, weight_clip_val, args):
@@ -50,15 +51,18 @@ def weight_calibration(onnx_graph, act_clip_val, weight_clip_val, args):
         dist.barrier()
         act_clip_val, weight_clip_val = load_clip_val(args)
 
-    if args.adaround:
-        args.acti_quant = False
-        graph_after_wt = adaround(onnx_graph, graph_after_wt, act_clip_val, weight_clip_val, args)
-
-    if args.brecq:
-        if args.drop is True:
-            args.acti_quant = True
-        else:
+    if not args.sparse:
+        if args.adaround:
             args.acti_quant = False
-        graph_after_wt = brecq(onnx_graph, graph_after_wt, act_clip_val, weight_clip_val, args)
+            graph_after_wt = adaround(onnx_graph, graph_after_wt, act_clip_val, weight_clip_val, args)
+
+        if args.brecq:
+            if args.drop is True:
+                args.acti_quant = True
+            else:
+                args.acti_quant = False
+            graph_after_wt = brecq(onnx_graph, graph_after_wt, act_clip_val, weight_clip_val, args)
+    else:
+        graph_after_wt = sparse_quant(onnx_graph, graph_after_wt, act_clip_val, weight_clip_val, args)
 
     return graph_after_wt, onnx_graph, act_clip_val, weight_clip_val
