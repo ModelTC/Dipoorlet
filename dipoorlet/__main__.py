@@ -45,7 +45,7 @@ parser.add_argument("--slurm", help="Launch task from slurm", default=False, act
 parser.add_argument("--mpirun", help="Launch task from mpirun", default=False, action='store_true')
 parser.add_argument("--sparse", help="sparse on/off", default=False, action="store_true")
 parser.add_argument("--sparse_rate", help="sparse rate", type=float, default=0.5)
-parser.add_argument("--pattern", help="sparse pattern", choices=["unstruction"], default="unstruction")
+parser.add_argument("--pattern", help="sparse pattern", choices=["unstruction", "nv24"], default="unstruction")
 args = parser.parse_args()
 
 if args.slurm:

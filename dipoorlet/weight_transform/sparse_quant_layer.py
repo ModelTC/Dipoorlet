@@ -40,9 +40,26 @@ def create_unstruction_mask(weight, sparsity):
     return mask
 
 
+def create_nv24_mask(weight, N, M):
+    if len(weight.shape) == 4:
+        weight_temp = weight.detach().abs().permute(0, 2, 3, 1).reshape(-1, M)
+        index = torch.argsort(weight_temp, dim=1)[:, :int(M-N)]
+        mask = torch.ones(weight_temp.shape, device=weight_temp.device)
+        mask = mask.scatter_(dim=1, index=index, value=0).reshape((weight.shape[0], weight.shape[2], weight.shape[3], weight.shape[1]))
+        mask = mask.permute(0, 3, 1, 2)
+    elif len(weight.shape) == 2:
+        weight_temp = weight.detach().abs().reshape(-1, M)
+        index = torch.argsort(weight_temp, dim=1)[:, :int(M-N)]
+        mask = torch.ones(weight_temp.shape, device=weight_temp.device)
+        mask = mask.scatter_(dim=1, index=index, value=0).reshape(weight.shape)
+    return mask
+
+
 def prune_weight(weight, sparse_info):
     if sparse_info["pattern"] == "unstruction":
         mask = create_unstruction_mask(weight, sparse_info["rate"])
+    elif sparse_info["pattern"] == "nv24":
+        mask = create_nv24_mask(weight, 2, 4)
     return weight * mask
 
 
