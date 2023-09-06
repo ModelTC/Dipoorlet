@@ -17,7 +17,7 @@ def weight_calibration(onnx_graph, act_clip_val, weight_clip_val, args):
     exactly the same on every GPUs.
     '''
     graph_after_wt = ONNXGraph()
-    onnx_graph.copy_to(graph_after_wt)
+    graph_after_wt.copy_from(onnx_graph)
     if args.bc:
         if dist.get_rank() == 0:
             bias_correction(graph_after_wt, act_clip_val, weight_clip_val, args)

@@ -9,8 +9,7 @@ import numpy as np
 import onnx
 import torch.distributed as dist
 from onnx import TensorProto, numpy_helper
-from onnx.shape_inference import infer_shapes
-from onnxsim import simplify
+from onnx.external_data_helper import convert_model_to_external_data
 from termcolor import colored
 
 from .platform_settings import platform_setting_table
@@ -19,11 +18,13 @@ logger = logging.getLogger("dipoorlet")
 
 
 class ONNXGraph(object):
-    def __init__(self, model=None, output_dir=""):
+    def __init__(self, model=None, output_dir="", deploy=None, model_type=None):
         self.model = model
         if self.model:
             self.graph = self.model.graph
         self.output_dir = output_dir
+        self.deploy = deploy
+        self.model_type = model_type
         self.initializer = {}
         self.input_map = {}
         self.output_map = {}
@@ -35,38 +36,24 @@ class ONNXGraph(object):
         self.input = []
         self.output = []
         if self.model:
-            self.replace_upsample_op_with_resize()
-            self.simplify_model()
+            self.set_names()
+            self.convert_constant_to_init()
             self.topologize_graph()
             self.prepare_initializer()
             self.set_index()
             self.get_inp_oup()
             self.get_shape_type()
 
-    def replace_upsample_op_with_resize(self):
-        self.model = infer_shapes(self.model)
-        for i, _node in enumerate(self.model.graph.node):
-            if _node.op_type == "Upsample":
-                inputs = []
-                inputs.append(_node.input[0])
-                inputs.append('')
-                inputs.append(_node.input[1])
-                inputs.append('')
-                node = onnx.helper.make_node(
-                    name="Resize_" + str(i),
-                    op_type="Resize",
-                    inputs=inputs,
-                    outputs=_node.output,
-                )
-                self.model.graph.node.remove(_node)
-                self.model.graph.node.insert(i, node)
-        self.graph = self.model.graph
-        self.update_model()
+    def set_names(self):
+        for idx, node in enumerate(self.model.graph.node):
+            if node.name == '':
+                node.name = node.op_type + "_" + str(idx)
 
-    def simplify_model(self):
-        self.model, check = simplify(self.model)
-        assert check, "Simplified ONNX model could not be validated"
-        self.graph = self.model.graph
+    def convert_constant_to_init(self):
+        for node in self.model.graph.node:
+            if node.op_type == 'Constant':
+                tensor = onnx.numpy_helper.to_array(node.attribute[0].t)
+                self.set_initializer(node.output[0], tensor, raw=True)
 
     def prepare_initializer(self):
         self.initializer.clear()
@@ -101,20 +88,31 @@ class ONNXGraph(object):
             if input.name in self.network_inputs:
                 self.tensor_name_shape_map[input.name] = [x.dim_value for x in input.type.tensor_type.shape.dim]
                 self.value_name_type_map[input.name] = input.type.tensor_type.elem_type
+
         for output in self.graph.output:
             self.tensor_name_shape_map[output.name] = [x.dim_value for x in output.type.tensor_type.shape.dim]
             self.value_name_type_map[output.name] = output.type.tensor_type.elem_type
 
-        model = infer_shapes(self.model)
-
         for init in self.initializer:
             self.tensor_name_shape_map[init] = list(self.get_initializer(init).shape)
-        inferred_value_info = model.graph.value_info
+        inferred_value_info = self.model.graph.value_info
         for info in inferred_value_info:
             shape = [x.dim_value for x in info.type.tensor_type.shape.dim]
             value_type = info.type.tensor_type.elem_type
             self.tensor_name_shape_map[info.name] = shape
             self.value_name_type_map[info.name] = value_type
+
+        value_names = list(self.tensor_name_shape_map.keys())
+        for name in value_names:
+            self.tensor_name_shape_map[name + "_q"] = self.tensor_name_shape_map[name]
+            if self.deploy is not None:
+                if name in self.initializer:
+                    symmetric = platform_setting_table[self.deploy]['qw_params']['symmetric']
+                else:
+                    symmetric = platform_setting_table[self.deploy]['qi_params']['symmetric']
+                self.value_name_type_map[name + "_q"] = TensorProto.INT8 if symmetric else TensorProto.UINT8
+                self.tensor_name_shape_map[name + "_dq"] = self.tensor_name_shape_map[name]
+                self.value_name_type_map[name + "_dq"] = TensorProto.FLOAT
 
     def get_tensor_shape(self, tensor_name):
         return self.tensor_name_shape_map[tensor_name]
@@ -179,7 +177,13 @@ class ONNXGraph(object):
             return ['OUTPUT_TOKEN']
         return self.input_map[input_name]
 
-    def save_onnx_model(self, name='tmp'):
+    def save_onnx_model(self, name='tmp', size_threshold=2048):
+        if self.model_type is not None:
+            convert_model_to_external_data(self.model, all_tensors_to_one_file=True,
+                                           location="{}.data".format(name),
+                                           size_threshold=size_threshold,
+                                           convert_attribute=False)
+
         model_path = os.path.join(self.output_dir, '{}.onnx'.format(name))
         onnx.save(self.model, model_path)
 
@@ -221,27 +225,27 @@ class ONNXGraph(object):
 
     def update_model(self):
         self.set_index()
-        opset_info = copy.deepcopy(self.model.opset_import[0])
-        if opset_info.version < 13:
-            opset_info.version = 13
         self.model = onnx.helper.make_model(self.graph,
                                             producer_name='updated_model',
-                                            opset_imports=[opset_info])
+                                            opset_imports=self.model.opset_import)
         self.prepare_initializer()
 
-    def copy_to(self, target_graph):
-        target_graph.model = copy.deepcopy(self.model)
-        target_graph.graph = copy.deepcopy(self.graph)
-        target_graph.initializer = copy.deepcopy(self.initializer)
-        target_graph.input_map = copy.deepcopy(self.input_map)
-        target_graph.output_map = copy.deepcopy(self.output_map)
-        target_graph.network_inputs = copy.deepcopy(self.network_inputs)
-        target_graph.network_outputs = copy.deepcopy(self.network_outputs)
-        target_graph.tensor_name_shape_map = copy.deepcopy(self.tensor_name_shape_map)
-        target_graph.input = copy.deepcopy(self.input)
-        target_graph.output = copy.deepcopy(self.output)
-        target_graph.name_idx_map = self.name_idx_map.copy()
-        target_graph.output_dir = self.output_dir
+    def copy_from(self, source_graph):
+        self.model = copy.deepcopy(source_graph.model)
+        self.graph = copy.deepcopy(source_graph.graph)
+        self.initializer = copy.deepcopy(source_graph.initializer)
+        self.input_map = copy.deepcopy(source_graph.input_map)
+        self.output_map = copy.deepcopy(source_graph.output_map)
+        self.network_inputs = copy.deepcopy(source_graph.network_inputs)
+        self.network_outputs = copy.deepcopy(source_graph.network_outputs)
+        self.tensor_name_shape_map = copy.deepcopy(source_graph.tensor_name_shape_map)
+        self.value_name_type_map = copy.deepcopy(source_graph.value_name_type_map)
+        self.input = copy.deepcopy(source_graph.input)
+        self.output = copy.deepcopy(source_graph.output)
+        self.name_idx_map = source_graph.name_idx_map.copy()
+        self.output_dir = source_graph.output_dir
+        self.deploy = source_graph.deploy
+        self.model_type = source_graph.model_type
 
 
 def setup_logger(args):
@@ -370,8 +374,9 @@ def save_profiling_res(layer_cosine_dict, model_cosine_dict, args,
     for k, v in model_cosine_dict.items():
         model_cosine_dict[k][0] = float(v[0])
         model_cosine_dict[k][1] = float(v[1])
-    with open(os.path.join(args.output_dir, layer_res_fname + '.rank{}'.format(rank)), 'w') as f:
-        json.dump(layer_cosine_dict, f, indent=4)
+    if len(layer_cosine_dict) != 0:
+        with open(os.path.join(args.output_dir, layer_res_fname + '.rank{}'.format(rank)), 'w') as f:
+            json.dump(layer_cosine_dict, f, indent=4)
     with open(os.path.join(args.output_dir, model_res_fname + '.rank{}'.format(rank)), 'w') as f:
         json.dump(model_cosine_dict, f, indent=4)
 
@@ -379,17 +384,21 @@ def save_profiling_res(layer_cosine_dict, model_cosine_dict, args,
 def reduce_profiling_res(rank_size, args, layer_res_fname='layer_res.json', model_res_fname='model_res.json'):
     '''Collect profiling res from each GPU and reduce.
     '''
-    with open(os.path.join(args.output_dir, layer_res_fname + '.rank0'), 'r') as f:
-        layer_cosine_dict = json.load(f)
+    if args.model_type is None:
+        with open(os.path.join(args.output_dir, layer_res_fname + '.rank0'), 'r') as f:
+            layer_cosine_dict = json.load(f)
+    else:
+        layer_cosine_dict = {}
     with open(os.path.join(args.output_dir, model_res_fname + '.rank0'), 'r') as f:
         model_cosine_dict = json.load(f)
-    for k, v in layer_cosine_dict.items():
-        layer_cosine_dict[k] = v / float(rank_size)
-    for i in range(1, rank_size):
-        with open(os.path.join(args.output_dir, layer_res_fname + '.rank{}'.format(i)), 'r') as f:
-            _layer_cosine_dict = json.load(f)
-            for k, v in _layer_cosine_dict.items():
-                layer_cosine_dict[k] += v / float(rank_size)
+    if args.model_type is None:
+        for k, v in layer_cosine_dict.items():
+            layer_cosine_dict[k] = v / float(rank_size)
+        for i in range(1, rank_size):
+            with open(os.path.join(args.output_dir, layer_res_fname + '.rank{}'.format(i)), 'r') as f:
+                _layer_cosine_dict = json.load(f)
+                for k, v in _layer_cosine_dict.items():
+                    layer_cosine_dict[k] += v / float(rank_size)
     for k, v in model_cosine_dict.items():
         model_cosine_dict[k][0] = v[0] / float(rank_size)
     for i in range(1, rank_size):

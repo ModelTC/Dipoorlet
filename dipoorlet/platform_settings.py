@@ -24,7 +24,7 @@ trt_platform_settings = {
 
 stpu_platform_settings = {
     'deploy_exclude_layers': [],
-    'quant_nodes': basic_quant_node + ['Clip'],
+    'quant_nodes': basic_quant_node + ['Clip', 'HardSigmoid'],
     'qi_params': {
         'bit_width': 8,
         'type': 'Linear',

@@ -7,10 +7,12 @@ import onnx
 import torch
 import torch.distributed as dist
 
+from onnxsim import simplify
+
 from .deploy import to_deploy
 from .dist_helper import init_from_mpi, init_from_slurm
-from .profiling import (quantize_profiling_multipass, show_model_profiling_res,
-                        show_model_ranges, weight_need_perchannel)
+from .profiling import (quantize_profiling_multipass, quantize_profiling_transformer,
+                        show_model_profiling_res, show_model_ranges, weight_need_perchannel)
 from .tensor_cali import tensor_calibration
 from .utils import (ONNXGraph, load_clip_val, logger, reduce_clip_val,
                     reduce_profiling_res, save_clip_val, save_profiling_res,
@@ -43,9 +45,11 @@ parser.add_argument("--stpu_wg", help="Enable winograd for stpu.", action="store
 parser.add_argument("--skip_prof_layer", help="Skip profiling by layer.", default=False, action='store_true')
 parser.add_argument("--slurm", help="Launch task from slurm", default=False, action='store_true')
 parser.add_argument("--mpirun", help="Launch task from mpirun", default=False, action='store_true')
-parser.add_argument("--sparse", help="sparse on/off", default=False, action="store_true")
-parser.add_argument("--sparse_rate", help="sparse rate", type=float, default=0.5)
-parser.add_argument("--pattern", help="sparse pattern", choices=["unstruction", "nv24"], default="unstruction")
+parser.add_argument("--sparse", help="Sparse on/off", default=False, action="store_true")
+parser.add_argument("--sparse_rate", help="Sparse rate", type=float, default=0.5)
+parser.add_argument("--pattern", help="Sparse pattern", choices=["unstruction", "nv24"], default="unstruction")
+parser.add_argument("--optim_transformer", help="Transformer model optimization", default=False, action='store_true')
+parser.add_argument("--model_type", help="Transformer model type", choices=["unet"], default=None)
 args = parser.parse_args()
 
 if args.slurm:
@@ -62,17 +66,39 @@ if args.output_dir is None:
     output_dir = os.path.join(os.path.abspath(model_path), 'results')
     args.output_dir = output_dir
 
+if args.model_type is not None:
+    args.optim_transformer = True
+    args.skip_prof_layer = True
+
 if dist.get_rank() == 0:
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
     setup_logger(args)
+
+    if args.optim_transformer:
+        model_path = ('/').join(args.model.split('/')[:-1])
+        args.infer_shape_dir = os.path.join(os.path.abspath(model_path), "infer_shape.onnx")
+        onnx.shape_inference.infer_shapes_path(args.model, args.infer_shape_dir)
+        args.optimzed_model_dir = os.path.join(args.output_dir, 'optim_model.onnx')
+        os.system("python -m onnxruntime.transformers.optimizer \
+                   --input {} --output {} --model_type={} \
+                   --use_external_data_format --disable_packed_qkv \
+                   --disable_packed_kv --use_gpu --disable_nhwc_conv"
+                   .format(args.infer_shape_dir, args.optimzed_model_dir, args.model_type))
+
 logger.parent = None
 
 start = time.time()
-model = onnx.load(args.model)
-onnx_graph = ONNXGraph(model, args.output_dir)
+if args.optim_transformer:
+    model = onnx.load(args.optimzed_model_dir)
+else:
+    model = onnx.load(args.model)
+    model = onnx.version_converter.convert_version(model, 13)
+    model, check = simplify(model)
+    assert check, "Simplified ONNX model could not be validated"
+onnx_graph = ONNXGraph(model, args.output_dir, args.deploy, args.model_type)
 
-if dist.get_rank() == 0:
+if dist.get_rank() == 0 and not args.optim_transformer:
     try:
         onnx.checker.check_model(onnx_graph.model)
     except onnx.checker.ValidationError as e:
@@ -106,8 +132,12 @@ dist.barrier()
 # Profiling Distributed.
 if dist.get_rank() == 0:
     logger.info("Profiling...")
-layer_cosine_dict, model_cosine_dict, quant_node_list = quantize_profiling_multipass(
-    graph, graph_ori, act_clip_val, weight_clip_val, args)
+if args.model_type is not None:
+    layer_cosine_dict, model_cosine_dict, quant_node_list = quantize_profiling_transformer(
+        graph, graph_ori, act_clip_val, weight_clip_val, args)
+else:
+    layer_cosine_dict, model_cosine_dict, quant_node_list = quantize_profiling_multipass(
+        graph, graph_ori, act_clip_val, weight_clip_val, args)
 save_profiling_res(layer_cosine_dict, model_cosine_dict, args)
 dist.barrier()
 if dist.get_rank() == 0:

@@ -36,7 +36,7 @@ def bias_correction(graph, act_clip_val, weight_clip_val, args):
     clip_val = act_clip_val.copy()
     clip_val.update(weight_clip_val)
     graph_bc = ONNXGraph()
-    graph.copy_to(graph_bc)
+    graph_bc.copy_from(graph)
     fp_cache = ActivationCache(graph, args)
     prev_act = None
     for node in graph.graph.node:

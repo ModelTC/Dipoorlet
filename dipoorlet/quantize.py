@@ -19,7 +19,7 @@ CLIP_SUFFIX = '_clip'
 
 def quant_graph(onnx_graph, clip_val, args):
     graph_q = ONNXGraph()
-    onnx_graph.copy_to(graph_q)
+    graph_q.copy_from(onnx_graph)
     quant_node_list = []
 
     for node in graph_q.graph.node:

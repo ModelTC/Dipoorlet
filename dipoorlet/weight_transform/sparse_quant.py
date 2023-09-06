@@ -25,11 +25,7 @@ def sparse_quant(graph_ori, graph, act_clip_val, weight_clip_val, args):
     num_per_rank = args.data_num // dist.get_world_size()
     rank_st = rank * num_per_rank
     rank_ed = rank_st + num_per_rank
-    sparse_info = {
-                    "sparse": True,
-                    "rate": args.sparse_rate,
-                    "pattern": args.pattern
-                }
+    sparse_info = {"sparse": True, "rate": args.sparse_rate, "pattern": args.pattern}
     fp_act_cache = ActivationCache(graph_ori, args, rank_st, rank_ed)
     prev_act_cache = None
     for node in graph_ori.graph.node:
@@ -72,10 +68,10 @@ def sparse_quant(graph_ori, graph, act_clip_val, weight_clip_val, args):
                 weight = weight.transpose(0, 1)
             scale, q_min, q_max = get_quant_tensor(weight.shape, qw_param, weight_range)
             qw_tensor = {'scale': scale,
-                            'q_min': q_min,
-                            'q_max': q_max,
-                            'per_channel': qw_param['per_channel'],
-                            'type': 'Linear'}
+                         'q_min': q_min,
+                         'q_max': q_max,
+                         'per_channel': qw_param['per_channel'],
+                         'type': 'Linear'}
             # Learning.
             relu_flag = follow_relu(graph, node)
             if relu_flag:
@@ -84,7 +80,7 @@ def sparse_quant(graph_ori, graph, act_clip_val, weight_clip_val, args):
                 fp_tensor = torch.nn.Parameter(torch.from_numpy(fp_out_tensor), False)
             # Learning sparse quant.
             sq_layer = SparseQLayer(node, weight, bias, qw_tensor, None,
-                                  relu_flag, node.op_type, sparse_info)
+                                    relu_flag, node.op_type, sparse_info)
             weight = learning_sparse_quant(
                 torch.nn.Parameter(torch.from_numpy(q_in_tensor).cuda(), False),
                 fp_tensor.cuda(),
@@ -110,7 +106,7 @@ def sparse_quant(graph_ori, graph, act_clip_val, weight_clip_val, args):
 
 def learning_sparse_quant(in_tensor, fp_out_tensor, ada_layer, batch_size, max_epoch):
     optimizer = torch.optim.SGD([ada_layer.layer.weight], lr=0.001, momentum=0.9, weight_decay=1e-4)
-    scheduler =  torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=max_epoch)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=max_epoch)
     ada_layer = DDP(ada_layer, [torch.cuda.current_device()])
     # New train precedure
     cur_iter = 0

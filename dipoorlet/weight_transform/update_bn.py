@@ -27,7 +27,7 @@ def update_bn_multipass(graph, act_clip_val, weight_clip_val, args):
     clip_val = act_clip_val.copy()
     clip_val.update(weight_clip_val)
     graph_tuning_bn = ONNXGraph()
-    graph.copy_to(graph_tuning_bn)
+    graph_tuning_bn.copy_from(graph)
     bn_list = []
     for node in graph_tuning_bn.graph.node:
         if node.op_type == "BatchNormalization":
