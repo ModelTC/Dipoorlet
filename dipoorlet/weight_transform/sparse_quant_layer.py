@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -43,13 +42,13 @@ def create_unstruction_mask(weight, sparsity):
 def create_nv24_mask(weight, N, M):
     if len(weight.shape) == 4:
         weight_temp = weight.detach().abs().permute(0, 2, 3, 1).reshape(-1, M)
-        index = torch.argsort(weight_temp, dim=1)[:, :int(M-N)]
+        index = torch.argsort(weight_temp, dim=1)[:, :int(M - N)]
         mask = torch.ones(weight_temp.shape, device=weight_temp.device)
         mask = mask.scatter_(dim=1, index=index, value=0).reshape((weight.shape[0], weight.shape[2], weight.shape[3], weight.shape[1]))
         mask = mask.permute(0, 3, 1, 2)
     elif len(weight.shape) == 2:
         weight_temp = weight.detach().abs().reshape(-1, M)
-        index = torch.argsort(weight_temp, dim=1)[:, :int(M-N)]
+        index = torch.argsort(weight_temp, dim=1)[:, :int(M - N)]
         mask = torch.ones(weight_temp.shape, device=weight_temp.device)
         mask = mask.scatter_(dim=1, index=index, value=0).reshape(weight.shape)
     return mask
@@ -147,8 +146,8 @@ class SparseQLayer(torch.nn.Module):
     def forward(self, x):
         s_weight = prune_weight(self.layer.weight, self.sparse_info)
         q_weight = quant_weight_wo_roundmask(s_weight,
-                                self.qw_tensor['scale'], self.qw_tensor['q_min'], self.qw_tensor['q_max'],
-                                self.qw_tensor['per_channel'])
+                                             self.qw_tensor['scale'], self.qw_tensor['q_min'], self.qw_tensor['q_max'],
+                                             self.qw_tensor['per_channel'])
         if self.transposed:
             q_weight = q_weight.transpose(0, 1)
         if self.type == 'Conv':

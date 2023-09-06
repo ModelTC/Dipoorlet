@@ -37,7 +37,7 @@ def node_has_equalized(graph, node):
 
 def weight_equalization(graph, args):
     graph_we = ONNXGraph()
-    graph.copy_to(graph_we)
+    graph_we.copy_from(graph)
 
     for node in graph_we.graph.node:
         if node.op_type == 'Conv':

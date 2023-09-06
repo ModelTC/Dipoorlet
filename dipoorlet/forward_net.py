@@ -1,5 +1,6 @@
 import copy
 import time
+import sys
 from collections import OrderedDict
 
 import numpy as np
@@ -16,6 +17,7 @@ from .quantize import QUANT_NODE_NAME_LIST
 from .utils import ONNXGraph, logger
 
 ort.set_default_logger_severity(3)
+sys.setrecursionlimit(2000)
 
 
 class ActivationCache(object):
@@ -31,9 +33,6 @@ class ActivationCache(object):
         self.st = st
         self.ed = ed
         self.providers = [("CUDAExecutionProvider", {'device_id': args.local_rank})]
-        if len(self.graph.value_name_type_map) == 0:
-            self.graph.get_inp_oup()
-            self.graph.get_shape_type()
         self.fetch_input()
         self._split_network()
         self.fill_ref_cnt()
@@ -97,9 +96,15 @@ class ActivationCache(object):
         sub_net = sub_graph.model
         ort_inputs = {}
         ort_session = ort.InferenceSession(sub_net.SerializeToString(), providers=self.providers)
+        if 'CUDAExecutionProvider' not in ort_session.get_provider_options():
+            logger.warning("CUDA may not used. Please check your ort/cuda/cudnn version.")
+
         for data in input_generator:
             for name in sub_graph.network_inputs:
-                ort_inputs[name] = data[name][:].reshape(*sub_graph.get_tensor_shape(name))
+                if len(data[name].shape) == 0 or sub_graph.get_tensor_shape(name)[0] == 0:
+                    ort_inputs[name] = data[name]
+                else:
+                    ort_inputs[name] = data[name][:].reshape(*sub_graph.get_tensor_shape(name))
             outputs = [output.name for output in ort_session.get_outputs()]
             ort_outputs = ort_session.run(outputs, ort_inputs)
             ort_outs = OrderedDict(zip(outputs, ort_outputs))
@@ -142,15 +147,23 @@ class ActivationCache(object):
                     continue
                 if input not in self.graph.initializer:
                     in_type = self.graph.get_value_type(input)
-                    input_value = mtvi(input, in_type, self.graph.get_tensor_shape(input))
+                    shape = self.graph.get_tensor_shape(input)
+                    if shape[0] == 0:
+                        shape = []
+                    input_value = mtvi(input, in_type, shape)
                     inputs.append(input_value)
                     network_inputs.append(input)
                 else:
                     inits.append(self.graph.initializer[input][0])
 
             for output in node.output:
+                if output == '':
+                    continue
                 out_type = self.graph.get_value_type(output)
-                output_value = mtvi(output, out_type, self.graph.get_tensor_shape(output))
+                shape = self.graph.get_tensor_shape(output)
+                if shape[0] == 0:
+                    shape = []
+                output_value = mtvi(output, out_type, shape)
                 outputs.append(output_value)
                 network_outputs.append(output)
 
@@ -326,6 +339,121 @@ def forward_net_octav(onnx_graph, args):
                     'max': [data_max]
                 }
     logger.info("Forward time: {:.2f} seconds".format(t1))
+    return statistics
+
+
+def forward_get_minmax_transformer(onnx_graph, args):
+    # Start minmax activation quantization.
+    statistics = {}
+    rank_num = args.data_num // args.world_size
+    data_st_idx = args.rank * rank_num
+    data_ed_idx = min((args.rank + 1) * rank_num, args.data_num)
+    fp_act_cache = ActivationCache(onnx_graph, args, data_st_idx, data_ed_idx)
+
+    input_names = [inp.name for inp in onnx_graph.graph.input]
+    output_names = []
+    for node in onnx_graph.graph.node:
+        for out in node.output:
+            output_names.append(out)
+    tensor_names = input_names + output_names
+
+    st = time.time()
+
+    for i in range(data_ed_idx - data_st_idx):
+        for name in tensor_names:
+            if name == '':
+                continue
+            if name in statistics:
+                statistics[name]['max'].append(fp_act_cache[name][i].max())
+                statistics[name]['min'].append(fp_act_cache[name][i].min())
+            else:
+                statistics[name] = {}
+                statistics[name]['max'] = [fp_act_cache[name][i].max()]
+                statistics[name]['min'] = [fp_act_cache[name][i].min()]
+    ed = time.time()
+
+    logger.info("Forward time: {:.2f} seconds".format(ed - st))
+    return statistics
+
+
+def forward_get_hist_transformer(onnx_graph, stats_min_max, args):
+    # Start hist activation quantization.
+    statistics = {}
+    rank_num = args.data_num // args.world_size
+    data_st_idx = args.rank * rank_num
+    data_ed_idx = min((args.rank + 1) * rank_num, args.data_num)
+    fp_act_cache = ActivationCache(onnx_graph, args, data_st_idx, data_ed_idx)
+
+    input_names = [inp.name for inp in onnx_graph.graph.input]
+    output_names = []
+    for node in onnx_graph.graph.node:
+        for out in node.output:
+            output_names.append(out)
+    tensor_names = input_names + output_names
+
+    for name in tensor_names:
+        if name == '':
+            continue
+        for i in range(data_ed_idx - data_st_idx):
+            data_max = max(np.max(stats_min_max[name]['max']),
+                           -np.min(stats_min_max[name]['min']))
+            hist, _ = np.histogram(np.abs(fp_act_cache[name][i]), int(args.bins), (0, data_max))
+            if name in statistics:
+                statistics[name].append(hist)
+            else:
+                statistics[name] = [hist]
+
+    return statistics
+
+
+def forward_net_octav_transformer(onnx_graph, args):
+    # Start mse activation quantization.
+    statistics = {}
+    rank_num = args.data_num // args.world_size
+    data_st_idx = args.rank * rank_num
+    data_ed_idx = min((args.rank + 1) * rank_num, args.data_num)
+    fp_act_cache = ActivationCache(onnx_graph, args, data_st_idx, data_ed_idx)
+
+    input_names = [inp.name for inp in onnx_graph.graph.input]
+    output_names = []
+    for node in onnx_graph.graph.node:
+        for out in node.output:
+            output_names.append(out)
+    tensor_names = input_names + output_names
+
+    st = time.time()
+    for name in tensor_names:
+        if name == '':
+            continue
+        for i in range(data_ed_idx - data_st_idx):
+            data_max = fp_act_cache[name][i].max()
+            data_min = fp_act_cache[name][i].min()
+            # If dynamic_sym = True, Means one more bit.
+            if np.abs(data_min - 0) < 1e-6 and 'dynamic_sym' in platform_setting_table[args.deploy]['qi_params']:
+                unsigned = 4
+            else:
+                unsigned = 1
+            abs_x = np.abs(fp_act_cache[name][i])
+            s_n = abs_x.sum() / abs_x[abs_x > 0].size
+            for _ in range(20):
+                s_n_plus_1 = abs_x[abs_x > s_n].sum() / \
+                    (1 / (4 ** 8) / 3 / unsigned * abs_x[abs_x <= s_n].size + abs_x[abs_x > s_n].size)
+                if np.abs(s_n_plus_1 - s_n) < 1e-6:
+                    break
+                s_n = s_n_plus_1
+            if name in statistics:
+                statistics[name]['optimal_s'].append(s_n)
+                statistics[name]['min'].append(data_min)
+                statistics[name]['max'].append(data_max)
+            else:
+                statistics[name] = {
+                    'optimal_s': [s_n],
+                    'min': [data_min],
+                    'max': [data_max]
+                }
+    ed = time.time()
+    
+    logger.info("Forward time: {:.2f} seconds".format(ed - st))
     return statistics
 
 

@@ -3,12 +3,11 @@ import math
 import os
 
 import numpy as np
-import onnx
 import torch.distributed as dist
 from onnx import numpy_helper
 from tqdm import tqdm
 
-from .forward_net import forward_get_tensor
+from .forward_net import forward_get_tensor, ActivationCache
 from .platform_settings import platform_setting_table
 from .quantize import DQTENSORSUFFIX, QUANT_NODE_NAME_LIST, quant_graph
 from .utils import cos_similarity, logger
@@ -39,8 +38,7 @@ def quantize_profiling_multipass(graph_after_wt, graph_ori, act_clip_val, weight
 
     rank = dist.get_rank()
     if rank == 0:
-        onnx_model = graph_q.model
-        onnx.save(onnx_model, os.path.join(args.output_dir, 'quant_model.onnx'))
+        graph_q.save_onnx_model(name='quant_model')
 
     layer_cosine_dict = {}
     model_cosine_dict = {}
@@ -89,6 +87,63 @@ def quantize_profiling_multipass(graph_after_wt, graph_ori, act_clip_val, weight
 
     for k, v in layer_cosine_dict.items():
         layer_cosine_dict[k] = v / rank_data_size
+
+    for k, v in model_cosine_dict.items():
+        if single[k]:
+            _cos = cos_similarity(np.stack(model_cosine_dict[k]['res_tol']),
+                                  np.stack(model_cosine_dict[k]['fp_tol']))
+            model_cosine_dict[k] = [_cos, _cos]
+        else:
+            model_cosine_dict[k] = [v[0] / rank_data_size, v[1]]
+
+    return layer_cosine_dict, model_cosine_dict, quant_node_list
+
+
+def quantize_profiling_transformer(graph_after_wt, graph_ori, act_clip_val, weight_clip_val, args):
+    clip_val = act_clip_val.copy()
+    clip_val.update(weight_clip_val)
+    graph_q, quant_node_list = quant_graph(graph_after_wt, clip_val, args)
+
+    rank = dist.get_rank()
+    if rank == 0:
+        graph_q.save_onnx_model(name='quant_model')
+
+    layer_cosine_dict = {}
+    model_cosine_dict = {}
+    single = get_output_single_map(graph_after_wt)
+    rank_data_size = math.ceil(args.data_num / args.world_size)
+    rank_st = rank * rank_data_size
+    rank_ed = min(rank * rank_data_size + rank_data_size, args.data_num)
+    rank_data_size = rank_ed - rank_st
+    if rank == 0:
+        data_gen = tqdm(range(0, rank_ed - rank_st))
+    else:
+        data_gen = range(0, rank_ed - rank_st)
+
+    fp_act_cache = ActivationCache(graph_ori, args, rank_st, rank_ed)
+    q_act_cache = ActivationCache(graph_q, args, rank_st, rank_ed)
+
+    for i in data_gen:
+        for tensor_name in graph_after_wt.network_outputs:
+            q_tensor_name = tensor_name
+            fp_tensors = fp_act_cache[tensor_name][i]
+            q_tensors = q_act_cache[q_tensor_name][i]
+            if tensor_name + DQTENSORSUFFIX in q_tensors:
+                q_tensor_name = tensor_name + DQTENSORSUFFIX
+
+            if single[tensor_name]:
+                if tensor_name not in model_cosine_dict:
+                    model_cosine_dict[tensor_name] = {'res_tol': [q_tensors], 'fp_tol': [fp_tensors]}
+                else:
+                    model_cosine_dict[tensor_name]['res_tol'].append(q_tensors)
+                    model_cosine_dict[tensor_name]['fp_tol'].append(fp_tensors)
+            else:
+                _cos = cos_similarity(fp_tensors, q_tensors)
+                if tensor_name not in model_cosine_dict:
+                    model_cosine_dict[tensor_name] = [_cos, _cos]
+                else:
+                    model_cosine_dict[tensor_name][0] += _cos
+                    model_cosine_dict[tensor_name][1] = min(_cos, model_cosine_dict[tensor_name][1])
 
     for k, v in model_cosine_dict.items():
         if single[k]:
