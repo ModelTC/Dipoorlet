@@ -358,11 +358,10 @@ def forward_get_minmax_transformer(onnx_graph, args):
     tensor_names = input_names + output_names
 
     st = time.time()
-
-    for i in range(data_ed_idx - data_st_idx):
-        for name in tensor_names:
-            if name == '':
-                continue
+    for name in tensor_names:
+        if name == '':
+            continue
+        for i in range(data_ed_idx - data_st_idx):
             if name in statistics:
                 statistics[name]['max'].append(fp_act_cache[name][i].max())
                 statistics[name]['min'].append(fp_act_cache[name][i].min())
@@ -452,7 +451,7 @@ def forward_net_octav_transformer(onnx_graph, args):
                     'max': [data_max]
                 }
     ed = time.time()
-    
+
     logger.info("Forward time: {:.2f} seconds".format(ed - st))
     return statistics
 

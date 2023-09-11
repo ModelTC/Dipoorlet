@@ -85,7 +85,8 @@ if dist.get_rank() == 0:
                    --use_external_data_format --disable_packed_qkv \
                    --disable_packed_kv --use_gpu --disable_nhwc_conv"
                    .format(args.infer_shape_dir, args.optimzed_model_dir, args.model_type))
-
+dist.barrier()
+args.optimzed_model_dir = os.path.join(args.output_dir, 'optim_model.onnx')
 logger.parent = None
 
 start = time.time()
