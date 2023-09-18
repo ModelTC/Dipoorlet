@@ -2,6 +2,7 @@ import argparse
 import os
 import sys
 import time
+import copy
 
 import onnx
 import torch
@@ -16,7 +17,7 @@ from .profiling import (quantize_profiling_multipass, quantize_profiling_transfo
 from .tensor_cali import tensor_calibration
 from .utils import (ONNXGraph, load_clip_val, logger, reduce_clip_val,
                     reduce_profiling_res, save_clip_val, save_profiling_res,
-                    setup_logger)
+                    setup_logger, deploy_QOperator)
 from .weight_transform import weight_calibration
 
 parser = argparse.ArgumentParser()
@@ -50,6 +51,7 @@ parser.add_argument("--sparse_rate", help="Sparse rate", type=float, default=0.5
 parser.add_argument("--pattern", help="Sparse pattern", choices=["unstruction", "nv24"], default="unstruction")
 parser.add_argument("--optim_transformer", help="Transformer model optimization", default=False, action='store_true')
 parser.add_argument("--model_type", help="Transformer model type", choices=["unet"], default=None)
+parser.add_argument("--quant_format", default="QDQ", type=str, choices=["QOP", "QDQ"])
 args = parser.parse_args()
 
 if args.slurm:
@@ -114,6 +116,7 @@ setattr(args, 'world_size', dist.get_world_size())
 if dist.get_rank() == 0:
     logger.info("Do tensor calibration...")
 act_clip_val, weight_clip_val = tensor_calibration(onnx_graph, args)
+tensor_range = copy.deepcopy(act_clip_val)
 save_clip_val(act_clip_val, weight_clip_val, args,
               act_fname='act_clip_val.json.rank{}'.format(args.rank),
               weight_fname='weight_clip_val.json.rank{}'.format(args.rank))
@@ -151,5 +154,7 @@ if dist.get_rank() == 0:
 if dist.get_rank() == 0:
     logger.info("Deploy to " + args.deploy + '...')
     to_deploy(graph, act_clip_val, weight_clip_val, args)
+    if args.quant_format == 'QOP' and args.model_type is None:
+        deploy_QOperator(graph.model, tensor_range, args)
     end = time.time()
     logger.info("Total time cost: {} seconds.".format(int(end - start)))
