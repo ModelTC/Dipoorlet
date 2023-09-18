@@ -96,7 +96,8 @@ if args.optim_transformer:
     model = onnx.load(args.optimzed_model_dir)
 else:
     model = onnx.load(args.model)
-    model = onnx.version_converter.convert_version(model, 13)
+    if model.opset_import[0].version < 13:
+        model = onnx.version_converter.convert_version(model, 13)
     model, check = simplify(model)
     assert check, "Simplified ONNX model could not be validated"
 onnx_graph = ONNXGraph(model, args.output_dir, args.deploy, args.model_type)
