@@ -10,6 +10,8 @@ import onnx
 import torch.distributed as dist
 from onnx import TensorProto, numpy_helper
 from onnx.external_data_helper import convert_model_to_external_data
+from onnxruntime.quantization.onnx_quantizer import ONNXQuantizer
+from onnxruntime.quantization.quant_utils import QuantizationMode, QuantType
 from termcolor import colored
 
 from .platform_settings import platform_setting_table
@@ -408,3 +410,26 @@ def reduce_profiling_res(rank_size, args, layer_res_fname='layer_res.json', mode
                 model_cosine_dict[k][0] += v[0] / float(rank_size)
                 model_cosine_dict[k][1] = min(model_cosine_dict[k][1], v[1])
     return layer_cosine_dict, model_cosine_dict
+
+
+def deploy_QOperator(model, tensor_range, args):
+    mode = QuantizationMode.QLinearOps
+    per_channel = platform_setting_table[args.deploy]['qw_params']['per_channel']
+    op_types_to_quantize = platform_setting_table[args.deploy]['quant_nodes']
+
+    if platform_setting_table[args.deploy]['qw_params']['symmetric']:
+        weight_type = QuantType.QInt8
+    else:
+        weight_type = QuantType.QUInt8
+
+    if platform_setting_table[args.deploy]['qi_params']['symmetric']:
+        activation_type = QuantType.QInt8
+    else:
+        activation_type = QuantType.QUInt8
+
+    quantizer = ONNXQuantizer(model, per_channel, False, mode, True,
+                              weight_type, activation_type, tensor_range,
+                              None, args.skip_layers, op_types_to_quantize)
+    quantizer.quantize_model()
+    model_output = os.path.join(args.output_dir, 'qop_model.onnx')
+    quantizer.model.save_model_to_file(model_output)
