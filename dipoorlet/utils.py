@@ -419,17 +419,24 @@ def deploy_QOperator(model, tensor_range, args):
 
     if platform_setting_table[args.deploy]['qw_params']['symmetric']:
         weight_type = QuantType.QInt8
+        WeightSymmetric = True
     else:
         weight_type = QuantType.QUInt8
+        WeightSymmetric = False
 
     if platform_setting_table[args.deploy]['qi_params']['symmetric']:
         activation_type = QuantType.QInt8
+        ActivationSymmetric = True
     else:
         activation_type = QuantType.QUInt8
+        ActivationSymmetric = False
+
+    extra_options = {"WeightSymmetric": WeightSymmetric, "ActivationSymmetric": ActivationSymmetric}
 
     quantizer = ONNXQuantizer(model, per_channel, False, mode, True,
                               weight_type, activation_type, tensor_range,
-                              None, args.skip_layers, op_types_to_quantize)
+                              None, args.skip_layers, op_types_to_quantize,
+                              extra_options)
     quantizer.quantize_model()
     model_output = os.path.join(args.output_dir, 'qop_model.onnx')
     quantizer.model.save_model_to_file(model_output)
