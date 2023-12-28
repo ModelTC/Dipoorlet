@@ -10,8 +10,6 @@ import onnx
 import torch.distributed as dist
 from onnx import TensorProto, numpy_helper
 from onnx.external_data_helper import convert_model_to_external_data
-from onnxruntime.quantization.onnx_quantizer import ONNXQuantizer
-from onnxruntime.quantization.quant_utils import QuantizationMode, QuantType
 from termcolor import colored
 
 from .platform_settings import platform_setting_table
@@ -232,6 +230,22 @@ class ONNXGraph(object):
                                             opset_imports=self.model.opset_import)
         self.prepare_initializer()
 
+    def update_model_dim(self, dim=32):
+        del self.graph.value_info[:]
+        for input in self.graph.input:
+            if input.name in self.network_inputs:
+                dim1 = input.type.tensor_type.shape.dim[0]
+                dim1.dim_value = dim
+
+        for output in self.graph.output:
+            if output.name in self.network_outputs:
+                dim1 = output.type.tensor_type.shape.dim[0]
+                dim1.dim_value = dim
+
+        self.update_model()
+        self.model = onnx.shape_inference.infer_shapes(self.model)
+        self.get_shape_type()
+
     def copy_from(self, source_graph):
         self.model = copy.deepcopy(source_graph.model)
         self.graph = copy.deepcopy(source_graph.graph)
@@ -276,6 +290,11 @@ def cos_similarity(ta, tb):
         return 0.
     return np.sum(ta * tb) / np.sqrt(np.square(ta).sum()) \
         / np.sqrt(np.square(tb).sum())
+
+
+def max_abs_gap(ta, tb):
+    assert ta.shape == tb.shape
+    return np.max(np.abs(ta - tb))
 
 
 def dispatch_functool(func):
@@ -412,24 +431,30 @@ def reduce_profiling_res(rank_size, args, layer_res_fname='layer_res.json', mode
     return layer_cosine_dict, model_cosine_dict
 
 
-def deploy_QOperator(model, tensor_range, args):
-    mode = QuantizationMode.QLinearOps
-    per_channel = platform_setting_table[args.deploy]['qw_params']['per_channel']
-    op_types_to_quantize = platform_setting_table[args.deploy]['quant_nodes']
+def input_data_generator(input_dir, input_name_list, data_st_idx, data_ed_idx):
+    for idx in range(data_st_idx, data_ed_idx):
+        data = {}
+        for i in input_name_list:
+            data[i] = np.fromfile(f'{input_dir}/{i}/{idx}.bin', 'float32')
+        yield data
 
-    if platform_setting_table[args.deploy]['qw_params']['symmetric']:
-        weight_type = QuantType.QInt8
-    else:
-        weight_type = QuantType.QUInt8
 
-    if platform_setting_table[args.deploy]['qi_params']['symmetric']:
-        activation_type = QuantType.QInt8
-    else:
-        activation_type = QuantType.QUInt8
+def restore_data(args, input_name_list, batch_size=32):
 
-    quantizer = ONNXQuantizer(model, per_channel, False, mode, True,
-                              weight_type, activation_type, tensor_range,
-                              None, args.skip_layers, op_types_to_quantize)
-    quantizer.quantize_model()
-    model_output = os.path.join(args.output_dir, 'qop_model.onnx')
-    quantizer.model.save_model_to_file(model_output)
+    if os.path.exists(args.batch_data_dir):
+        logger.info("True")
+        os.system(f"rm -rf {args.batch_data_dir}")
+
+    os.mkdir(args.batch_data_dir)
+
+    for name in input_name_list:
+        os.mkdir(args.batch_data_dir + '/' + name)
+        batch_data = []
+        for idx in range(0, args.data_num):
+            data = np.fromfile(f'{args.input_dir}/{name}/{idx}.bin', 'float32').reshape(1, -1)
+            batch_data.append(data)
+            if (idx + 1) % batch_size == 0:
+                batch_id = int(idx / batch_size)
+                batch_data = np.vstack(batch_data)
+                batch_data.tofile(f'{args.batch_data_dir}/{name}/{batch_id}.bin')
+                batch_data = []
