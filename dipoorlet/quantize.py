@@ -108,6 +108,28 @@ def insert_fake_quant_node_output(graph, clip_val, args):
     return
 
 
+def delete_fake_quant_node(graph, node):
+
+    def get_input_idx(node, input):
+        for i, inp in enumerate(node.input):
+            if inp == input:
+                return i
+
+    inputs = copy.deepcopy(node.input)
+    for input in inputs:
+        if not input.endswith(DQTENSORSUFFIX):
+            continue
+        dequant_node = graph.get_tensor_producer(input)
+        quant_node = graph.get_tensor_producer(dequant_node.input[0])
+        quant_consumers = graph.get_tensor_consumer(dequant_node.output[0])
+        for consumer in quant_consumers:
+            consumer.input.insert(get_input_idx(consumer, quant_node.input[0] + DQTENSORSUFFIX), quant_node.input[0])
+            if dequant_node.output[0] in consumer.input:
+                consumer.input.remove(dequant_node.output[0])
+        graph.graph.node.remove(dequant_node)
+        graph.graph.node.remove(quant_node)
+
+
 def get_qnode_by_param(param, in_tensor_name, tensor_shape, range, need_transpose=False):
     bit_width = param['bit_width']
     zero_point = [0]

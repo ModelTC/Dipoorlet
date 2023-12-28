@@ -13,11 +13,12 @@ from onnxsim import simplify
 from .deploy import to_deploy
 from .dist_helper import init_from_mpi, init_from_slurm
 from .profiling import (quantize_profiling_multipass, quantize_profiling_transformer,
-                        show_model_profiling_res, show_model_ranges, weight_need_perchannel)
+                        quantize_profiling_layerwise, show_model_profiling_res,
+                        show_model_ranges, weight_need_perchannel)
 from .tensor_cali import tensor_calibration
 from .utils import (ONNXGraph, load_clip_val, logger, reduce_clip_val,
                     reduce_profiling_res, save_clip_val, save_profiling_res,
-                    setup_logger, deploy_QOperator)
+                    setup_logger, restore_data)
 from .weight_transform import weight_calibration
 
 parser = argparse.ArgumentParser()
@@ -51,8 +52,18 @@ parser.add_argument("--sparse_rate", help="Sparse rate", type=float, default=0.5
 parser.add_argument("--pattern", help="Sparse pattern", choices=["unstruction", "nv24"], default="unstruction")
 parser.add_argument("--optim_transformer", help="Transformer model optimization", default=False, action='store_true')
 parser.add_argument("--model_type", help="Transformer model type", choices=["unet"], default=None)
-parser.add_argument("--quant_format", default="QDQ", type=str, choices=["QOP", "QDQ"])
+parser.add_argument("--onnx_sim", help="Whether use onnxsim to simplify model", action='store_true')
+parser.add_argument("--qnode_version", help="The quant node opset version", type=int, choices=[13], default=13)
+parser.add_argument("--layerwise_error_prof", help='Profiling per-layer quantitative error', action="store_true")
+parser.add_argument("--prof_num", type=int, default=32)
+parser.add_argument("--batch_data_dir", type=str, default="./batch_data/")
+parser.add_argument("--criterion", help='The evaluation criterion of profiling quantitative error', type=str,
+                    choices=['cosine', 'max_abs_gap'], default="cosine")
+parser.add_argument("--sensitive_layer_num", type=int, default=10)
 args = parser.parse_args()
+
+if args.layerwise_error_prof:
+    assert args.prof_num <= args.data_num
 
 if args.slurm:
     init_from_slurm()
@@ -96,10 +107,11 @@ if args.optim_transformer:
     model = onnx.load(args.optimzed_model_dir)
 else:
     model = onnx.load(args.model)
-    if model.opset_import[0].version < 13:
-        model = onnx.version_converter.convert_version(model, 13)
-    model, check = simplify(model)
-    assert check, "Simplified ONNX model could not be validated"
+    if model.opset_import[0].version < args.qnode_version:
+        model = onnx.version_converter.convert_version(model, args.qnode_version)
+    if args.onnx_sim:
+        model, check = simplify(model, mutable_initializer=True)
+        assert check, "Simplified ONNX model could not be validated"
 onnx_graph = ONNXGraph(model, args.output_dir, args.deploy, args.model_type)
 
 if dist.get_rank() == 0 and not args.optim_transformer:
@@ -151,11 +163,18 @@ if dist.get_rank() == 0:
     show_model_ranges(graph, act_clip_val, weight_clip_val, args)
     weight_need_perchannel(graph, args)
 
+# Profiling Layerwise error Distributed.
+if args.layerwise_error_prof:
+    if dist.get_rank() == 0:
+        if not os.path.exists(args.batch_data_dir):
+            restore_data(args, graph.network_inputs, args.prof_num)
+        logger.info("Profiling layerwise quantitative error ...")
+        quantize_profiling_layerwise(graph, graph_ori, act_clip_val, weight_clip_val, args)
+dist.barrier()
+
 # Deploy
 if dist.get_rank() == 0:
     logger.info("Deploy to " + args.deploy + '...')
     to_deploy(graph, act_clip_val, weight_clip_val, args)
-    if args.quant_format == 'QOP' and args.model_type is None:
-        deploy_QOperator(graph.model, tensor_range, args)
     end = time.time()
     logger.info("Total time cost: {} seconds.".format(int(end - start)))
