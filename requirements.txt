@@ -1,5 +1,5 @@
 torch
-onnx>=1.10.0
+onnx
 onnxsim
 onnxruntime-gpu
 numpy
